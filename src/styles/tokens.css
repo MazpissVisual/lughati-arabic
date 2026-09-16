@@ -1,0 +1,134 @@
+/* ==========================================================================
+   DESIGN SYSTEM — Tokens
+   Lughati Arabic — derived from Figma "UI" design spec
+   ========================================================================== */
+
+:root {
+  /* --- Color: Brand (blue) --- */
+  --color-primary-50:  #EFF6FF;
+  --color-primary-100: #DBEAFE;
+  --color-primary-200: #BFDBFE;
+  --color-primary-300: #93C5FD;
+  --color-primary-400: #60A5FA;
+  --color-primary-500: #3B82F6;
+  --color-primary-600: #2563EB;
+  --color-primary-700: #1D4ED8;
+  --color-primary-800: #1E3A8A;
+
+  /* --- Color: Accent (amber/orange, for streak/gamification) --- */
+  --color-accent-50:  #FFF7ED;
+  --color-accent-100: #FFEDD5;
+  --color-accent-300: #FFDCC2;
+  --color-accent-400: #FDBA74;
+  --color-accent-500: #F59E0B;
+  --color-accent-600: #FC9D41;
+  --color-accent-700: #6B3900;
+
+  /* --- Color: Neutral / Ink --- */
+  --color-ink-950: #1C1A23;
+  --color-ink-900: #1E1B4B;
+  --color-ink-800: #33304F;
+  --color-ink-700: #484554;
+  --color-ink-600: #56637A;
+  --color-ink-500: #64748B;
+  --color-ink-400: #94A3B8;
+  --color-ink-300: #C9C4D7;
+  --color-ink-200: #E5E0ED;
+  --color-ink-100: #E2E8F0;
+  --color-ink-50:  #F1ECF8;
+
+  --color-surface: #FFFFFF;
+  --color-surface-translucent: rgba(248, 250, 255, 0.85);
+  --color-canvas: #F8FAFF;
+  --color-sidebar: #EFF6FF;
+  --color-bg: #F8FAFF;
+
+  /* --- Color: Semantic --- */
+  --color-success: #10B981;
+  --color-success-bg: #ECFDF5;
+  --color-error:   #EF4444;
+  --color-error-bg: #FFDAD6;
+  --color-warning: #F59E0B;
+  --color-info:    #3B82F6;
+  --color-info-bg: #EEF2FF;
+
+  /* --- Aliases --- */
+  --primary: var(--color-primary-600);
+  --secondary: var(--color-primary-400);
+  --interactive: var(--color-primary-600);
+  --outline: var(--color-ink-300);
+  --green: var(--color-success);
+  --gold: var(--color-accent-500);
+
+  --gradient-primary: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%);
+  --gradient-gold: linear-gradient(135deg, #FC9D41 0%, #F59E0B 100%);
+  --gradient-badge: linear-gradient(90deg, #2563EB 0%, #3B82F6 100%);
+
+  /* --- Typography --- */
+  --font-latin: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-arabic: 'Amiri', 'Scheherazade New', 'Traditional Arabic', serif;
+
+  --fs-2xs: 0.75rem;
+  --fs-xs: 0.875rem;
+  --fs-sm: 0.9375rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.2rem;
+  --fs-xl: 1.5rem;
+  --fs-2xl: 2rem;
+  --fs-3xl: 2.4rem;
+  --fs-arabic-md: 2rem;
+  --fs-arabic-lg: 3.2rem;
+  --fs-arabic-xl: 4.8rem;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+
+  --lh-tight: 1.2;
+  --lh-normal: 1.5;
+
+  /* --- Spacing (4px base) --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* --- Radius --- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* --- Shadow (blue-tinted) --- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 20px rgba(37, 99, 235, 0.08);
+  --shadow-lg: 0 8px 30px rgba(37, 99, 235, 0.08);
+  --shadow-xl: 0 8px 30px rgba(37, 99, 235, 0.12);
+  --shadow-glow: 0 0 24px rgba(37, 99, 235, 0.35);
+
+  /* --- Layout --- */
+  --sidebar-width: 256px;
+  --topbar-height: 64px;
+  --header-height: 64px;
+  --nav-height: 64px;
+  --content-max-width: 1200px;
+  --max-width: 480px; /* fallback for legacy mobile-shell rules */
+
+  /* --- Motion --- */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+}

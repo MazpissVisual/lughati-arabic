@@ -1,0 +1,137 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isGuru() {
+      return isSignedIn() && exists(/databases/$(database)/documents/guru/$(request.auth.uid));
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Guru boleh baca data murid HANYA jika murid tsb berada di kelas milik guru yang login.
+    function isGuruOfStudent(muridUid) {
+      let murid = get(/databases/$(database)/documents/murid/$(muridUid));
+      let kelas = get(/databases/$(database)/documents/kelas/$(murid.data.kelasId));
+      return isGuru() && kelas.data.guruId == request.auth.uid;
+    }
+
+    // Versi khusus untuk rule collection `murid` itu sendiri — pakai resource.data langsung
+    // (bukan get() ke murid/{uid} lagi) karena Firestore menolak self-referential get() di dalam
+    // rule `list` untuk collection yang sama sedang di-query (walau untuk `get()` satu dokumen aman-aman saja).
+    // PENTING: exists() dicek dulu sebelum get().data — kalau kelasId null/kosong atau nunjuk ke
+    // dokumen kelas yang sudah tidak ada, get().data langsung throw NOT_FOUND dan bikin SELURUH
+    // rule pemanggilnya (mis. `isOwner(...) || isGuruOfKelas(...)`) dianggap deny — bukan cuma
+    // operand ini yang gagal — walau harusnya bisa lolos lewat operand `isOwner` di sisi lain `||`.
+    function isGuruOfKelas(kelasId) {
+      return isGuru()
+        && kelasId != null
+        && exists(/databases/$(database)/documents/kelas/$(kelasId))
+        && get(/databases/$(database)/documents/kelas/$(kelasId)).data.guruId == request.auth.uid;
+    }
+
+    // Dipakai murid untuk baca catatan broadcast kelasnya sendiri (fitur Rapor) — cek kelasId di
+    // dokumen murid/{uid} milik user yang login sendiri, bukan lookup ke murid lain.
+    // PENTING: exists() dicek dulu sebelum get().data — kalau user yang login itu guru (tidak
+    // punya dokumen murid/{uid} sama sekali), get() lalu .data akan throw NOT_FOUND dan bikin
+    // SELURUH rule (termasuk isGuruOfKelas di sisi lain `||`) ikut dianggap gagal/deny. `&&` di
+    // Firestore rules short-circuit dengan aman, jadi exists() harus jadi penjaga di depan.
+    function isMemberOfKelas(kelasId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/murid/$(request.auth.uid))
+        && get(/databases/$(database)/documents/murid/$(request.auth.uid)).data.kelasId == kelasId;
+    }
+
+    // Konten belajar: dibaca semua pengguna yang login, ditulis hanya guru/admin.
+    match /mufrodat/{kategoriId} {
+      allow read: if isSignedIn();
+      allow write: if isGuru();
+
+      match /kata/{wordId} {
+        allow read: if isSignedIn();
+        allow write: if isGuru();
+      }
+    }
+
+    match /muhadatsah/{topikId} {
+      allow read: if isSignedIn();
+      allow write: if isGuru();
+    }
+
+    match /hijaiyah/{letterId} {
+      allow read: if isSignedIn();
+      allow write: if isGuru();
+    }
+
+    match /kuisSoal/{modeId} {
+      allow read: if isSignedIn();
+      allow write: if isGuru();
+
+      match /soal/{soalId} {
+        allow read: if isSignedIn();
+        allow write: if isGuru();
+      }
+    }
+
+    // Profil guru & kelas
+    match /guru/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(uid);
+    }
+
+    match /kelas/{kelasId} {
+      allow read: if isSignedIn();
+      // `request.resource` bernilai null untuk operasi delete — jadi rule create/update (yang pakai
+      // request.resource.data) dan delete (yang pakai resource.data, data yang SUDAH ada) dipisah.
+      allow create, update: if isGuru() && request.resource.data.guruId == request.auth.uid;
+      allow delete: if isGuru() && resource.data.guruId == request.auth.uid;
+    }
+
+    // Profil murid: guru pemilik kelas boleh baca, murid hanya boleh baca/tulis dirinya sendiri.
+    // Guru pemilik kelas juga boleh LEPAS murid dari kelasnya (field kelasId doang) — dipakai saat
+    // guru hapus kelas: murid dilepas, bukan ikut dihapus, progres belajarnya tetap aman.
+    match /murid/{uid} {
+      allow read: if isOwner(uid) || isGuruOfKelas(resource.data.kelasId);
+      allow write: if isOwner(uid) ||
+        (isGuruOfKelas(resource.data.kelasId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['kelasId']));
+    }
+
+    // Progres & riwayat kuis: murid hanya boleh akses datanya sendiri, guru hanya boleh baca murid di kelasnya.
+    match /progresMurid/{uid} {
+      allow read: if isOwner(uid) || isGuruOfStudent(uid);
+      allow write: if isOwner(uid);
+    }
+
+    match /kuisRiwayat/{uid}/attempt/{attemptId} {
+      allow read: if isOwner(uid) || isGuruOfStudent(uid);
+      allow write: if isOwner(uid);
+    }
+
+    // Fitur Rapor — catatan guru, 3 level terpisah. Murid cuma boleh baca (read-only), semua
+    // tulis (create/update/delete) cuma boleh guru pemilik kelas terkait.
+    match /catatanKelas/{noteId} {
+      allow read: if isMemberOfKelas(resource.data.kelasId) || isGuruOfKelas(resource.data.kelasId);
+      allow create: if isGuruOfKelas(request.resource.data.kelasId);
+      allow update, delete: if isGuruOfKelas(resource.data.kelasId);
+    }
+
+    match /catatanMurid/{noteId} {
+      allow read: if isOwner(resource.data.muridUid) || isGuruOfKelas(resource.data.kelasId);
+      allow create: if isGuruOfKelas(request.resource.data.kelasId);
+      allow update, delete: if isGuruOfKelas(resource.data.kelasId);
+    }
+
+    match /catatanPengerjaan/{noteId} {
+      allow read: if isOwner(resource.data.muridUid) || isGuruOfKelas(resource.data.kelasId);
+      allow create: if isGuruOfKelas(request.resource.data.kelasId);
+      allow update, delete: if isGuruOfKelas(resource.data.kelasId);
+    }
+  }
+}

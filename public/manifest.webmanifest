@@ -1,0 +1,13 @@
+{
+  "name": "Belajar Bahasa Arab",
+  "short_name": "ArabicApp",
+  "description": "Media pembelajaran interaktif huruf hijaiyah dan kosakata bahasa Arab",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f9f7",
+  "theme_color": "#14b872",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
