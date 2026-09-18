@@ -191,6 +191,21 @@
   color: var(--color-primary-600);
 }
 
+/* Ikon "Tentang Aplikasi" — dibedakan dari header-btn default (abu-abu pudar) supaya lebih kontras/kelihatan. */
+.header-btn--accent {
+  background: var(--color-primary-100);
+  color: var(--color-primary-600);
+}
+.header-btn--accent:hover { background: var(--color-primary-200, var(--color-primary-100)); }
+
+/* Ikon "Keluar" — merah, supaya jelas beda dari aksi netral lain di header. */
+.header-btn--danger {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+.header-btn--danger:hover { background: var(--color-error); color: #fff; }
+.header-btn--danger:active { background: var(--color-error); color: #fff; }
+
 /* --- 2. Main Scroll Area --- */
 .app-main {
   flex: 1;
@@ -1432,8 +1447,8 @@
   width: 44px;
   height: 44px;
   border-radius: var(--radius-md);
-  background: var(--color-success-bg);
-  color: var(--color-success);
+  background: var(--color-primary-100);
+  color: var(--color-primary-600);
   display: grid;
   place-items: center;
   font-size: 1.3rem;
@@ -1836,7 +1851,16 @@
   flex-wrap: wrap;
   gap: var(--space-3);
 }
-.chat-header__back { font-size: var(--fs-xs); color: var(--color-ink-500); }
+.chat-header__back,
+.back-link {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  color: var(--color-primary-700);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+}
 .chat-header__title { font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--color-ink-900); }
 
 .chat-toggle {

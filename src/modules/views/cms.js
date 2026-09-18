@@ -9,7 +9,8 @@ import {
   getMateriKategori, getMateriBlok,
   saveMateriKategori, deleteMateriKategori, saveMateriBlok, deleteMateriBlok,
   reorderMateriKategori, reorderMateriBlok,
-  countMissingTingkat, migrateMissingTingkat
+  countMissingTingkat, migrateMissingTingkat,
+  getCpTp, saveCpTp
 } from '../content.js';
 import { icon } from '../icons.js';
 import { confirmDialog } from '../ui.js';
@@ -95,6 +96,7 @@ function validateKuisSoal(fields, jenis) {
 
 function validateMateriKategori(fields) {
   if (!fields.judul || fields.judul.trim().length < 2) return 'Judul materi wajib diisi (minimal 2 karakter).';
+  if (!fields.bab || Number(fields.bab) <= 0) return 'Nomor bab harus berupa angka lebih dari 0.';
   return null;
 }
 
@@ -297,7 +299,7 @@ function renderMateriTab(materiKategoriList) {
         </span>
         <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
           <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-weight:var(--fw-bold); flex:1; min-width:0;">${k.judul}</span>
+            <span style="font-weight:var(--fw-bold); flex:1; min-width:0;">Bab ${k.bab} — ${k.judul}</span>
             <span class="cms-row__chevron" style="margin-left:0;">${icon('chevronRight', { size: 16 })}</span>
           </div>
           <div style="font-size:var(--fs-xs); color:var(--color-ink-400);">${jumlahBlok} blok konten</div>
@@ -306,7 +308,21 @@ function renderMateriTab(materiKategoriList) {
     `;
   }).join('');
 
+  const cpTp = getCpTp(tingkatFilter);
+  const hasCpTp = cpTp.cp || cpTp.tp;
+
   return `
+    <div class="card" style="display:flex; flex-direction:column; gap:var(--space-2); padding:var(--space-4);">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap;">
+        <div style="font-size:var(--fs-sm); font-weight:var(--fw-bold); color:var(--color-ink-900);">CP & TP — Kelas ${tingkatFilter}</div>
+        <button type="button" class="btn btn--outline" id="edit-cptp-btn" style="width:auto; height:30px; padding:0 12px; font-size:var(--fs-xs);">${hasCpTp ? 'Edit' : '+ Isi CP & TP'}</button>
+      </div>
+      ${hasCpTp ? `
+        ${cpTp.cp ? `<div style="font-size:var(--fs-xs); color:var(--color-ink-600); white-space:pre-wrap;"><strong>CP:</strong> ${cpTp.cp}</div>` : ''}
+        ${cpTp.tp ? `<div style="font-size:var(--fs-xs); color:var(--color-ink-600); white-space:pre-wrap;"><strong>TP:</strong> ${cpTp.tp}</div>` : ''}
+      ` : `<div style="font-size:var(--fs-xs); color:var(--color-ink-400);">Belum diisi untuk Kelas ${tingkatFilter}.</div>`}
+    </div>
+
     <div style="display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap;">
       <button class="btn btn--primary" style="width:auto;" id="add-materikategori-btn">+ Tambah Materi</button>
       <span style="font-size:var(--fs-2xs); color:var(--color-ink-400); display:inline-flex; align-items:center; gap:4px;">${icon('grip', { size: 12 })} Seret untuk urutkan · klik untuk kelola isi</span>
@@ -337,7 +353,7 @@ function manageRowHtml({ id, kategoriId, idx, total, glyph, latin, extra, isActi
           isLast: idx === total - 1
         })}
       </span>
-      <span class="cms-row__text"><span class="arabic">${glyph}</span> — ${latin}${extra ? ` : ${extra}` : ''}</span>
+      <span class="cms-row__text"><span class="arabic">${glyph}</span>${latin ? ` — ${latin}` : ''}${extra ? ` : ${extra}` : ''}</span>
       <button type="button" class="header-btn" data-delete-manage-item="${id}" title="Hapus" aria-label="Hapus item" style="flex-shrink:0;">${icon('x', { size: 14 })}</button>
     </li>
   `;
@@ -388,9 +404,17 @@ function renderManageKuisSoal() {
   const soalList = getKuisSoal(manage.kategoriId);
   const current = manageItemId ? soalList.find(s => s.id === manageItemId) : {};
 
-  const rowsHtml = soalList.map((s, idx) => manageRowHtml({
-    id: s.id, idx, total: soalList.length, glyph: s.glyph || s.jawaban, latin: s.latin || s.petunjuk, extra: s.arti || s.kalimat, isActive: s.id === manageItemId
-  })).join('');
+  const rowsHtml = soalList.map((s, idx) => {
+    let glyph, latin, extra;
+    if (jenis === 'susun') {
+      glyph = s.kalimat; latin = ''; extra = s.arti;
+    } else if (jenis === 'tts') {
+      glyph = s.jawaban; latin = ''; extra = s.petunjuk;
+    } else {
+      glyph = s.glyph; latin = s.latin; extra = s.arti;
+    }
+    return manageRowHtml({ id: s.id, idx, total: soalList.length, glyph, latin, extra, isActive: s.id === manageItemId });
+  }).join('');
 
   let formHtml;
   if (jenis === 'susun') {
@@ -581,7 +605,7 @@ function renderManageMateriBlok() {
 function renderManageLayout({ title, editKategoriBtn, formTitle, formHtml, listTitle, rowsHtml, emptyText, extraHtml }) {
   return `
     <div class="animate-fade-in" style="display:flex; flex-direction:column; gap:var(--space-4);">
-      <button id="manage-back-btn" style="font-size:var(--fs-xs); color:var(--color-ink-500); display:inline-flex; align-items:center; gap:4px; align-self:flex-start;">
+      <button id="manage-back-btn" class="back-link">
         ${icon('chevronLeft', { size: 13 })} Kembali ke Daftar Bab
       </button>
       <div style="display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap;">
@@ -697,13 +721,21 @@ function renderEditPage(kategori) {
     title = editing.id ? 'Edit Materi' : 'Tambah Materi';
     bodyHtml = `
       <div style="font-size:var(--fs-xs); color:var(--color-ink-500);">Kelas: <strong>${tingkatFilter}</strong></div>
+      ${field('bab', 'Nomor Bab', data.bab, false, 'number')}
       ${field('judul', 'Judul Materi', data.judul)}
+    `;
+  } else if (editing.kind === 'cpTp') {
+    const data = getCpTp(tingkatFilter);
+    title = `CP & TP — Kelas ${tingkatFilter}`;
+    bodyHtml = `
+      ${fieldTextarea('cp', 'Capaian Pembelajaran (CP)', data.cp)}
+      ${fieldTextarea('tp', 'Tujuan Pembelajaran (TP)', data.tp)}
     `;
   }
 
   return `
     <div class="animate-fade-in" style="display:flex; flex-direction:column; gap:var(--space-4); max-width:640px;">
-      <button id="cms-back-btn" style="font-size:var(--fs-xs); color:var(--color-ink-500); display:inline-flex; align-items:center; gap:4px; align-self:flex-start;">
+      <button id="cms-back-btn" class="back-link">
         ${icon('chevronLeft', { size: 13 })} Kembali ke daftar
       </button>
       <div class="card" style="padding:var(--space-6); display:flex; flex-direction:column; gap:var(--space-4);">
@@ -787,7 +819,7 @@ function bindDragKategori(root, rerender) {
       const targetId = el.dataset.kategoriDrag;
       if (!draggedKategoriId || draggedKategoriId === targetId) { draggedKategoriId = null; return; }
 
-      const ids = getKategori().map(k => k.id);
+      const ids = getKategori(tingkatFilter).map(k => k.id);
       const from = ids.indexOf(draggedKategoriId);
       const to = ids.indexOf(targetId);
       if (from === -1 || to === -1) { draggedKategoriId = null; return; }
@@ -917,7 +949,7 @@ function bindKuisMoveButtons(root, rerender) {
 }
 
 function swapAndReorderKategori(id, direction, rerender) {
-  const ids = getKategori().map(k => k.id);
+  const ids = getKategori(tingkatFilter).map(k => k.id);
   const from = ids.indexOf(id);
   const to = from + direction;
   if (to < 0 || to >= ids.length) return;
@@ -951,7 +983,7 @@ function bindDragTopik(root, rerender) {
       const targetId = el.dataset.topikDrag;
       if (!draggedTopikId || draggedTopikId === targetId) { draggedTopikId = null; return; }
 
-      const ids = getTopikMuhadatsah().map(t => t.id);
+      const ids = getTopikMuhadatsah(tingkatFilter).map(t => t.id);
       const from = ids.indexOf(draggedTopikId);
       const to = ids.indexOf(targetId);
       if (from === -1 || to === -1) { draggedTopikId = null; return; }
@@ -966,7 +998,7 @@ function bindDragTopik(root, rerender) {
 }
 
 function swapAndReorderTopik(id, direction, rerender) {
-  const ids = getTopikMuhadatsah().map(t => t.id);
+  const ids = getTopikMuhadatsah(tingkatFilter).map(t => t.id);
   const from = ids.indexOf(id);
   const to = from + direction;
   if (to < 0 || to >= ids.length) return;
@@ -1139,7 +1171,7 @@ export function bindCmsEvents(root, rerender) {
         if (!id) throw new Error('ID topik tidak valid.');
         const { id: _drop, ...fields } = form;
         fields.tingkat = tingkatFilter;
-        if (!editing.id) fields.urutan = getTopikMuhadatsah().length;
+        if (!editing.id) fields.urutan = getTopikMuhadatsah(tingkatFilter).length;
         fields.dialog = dialogRows.map(r => ({
           speaker: r.speaker.trim(),
           side: r.side === 'right' ? 'right' : 'left',
@@ -1148,8 +1180,10 @@ export function bindCmsEvents(root, rerender) {
         }));
         await saveTopikMuhadatsah(id, fields);
       } else if (editing.kind === 'materiKategori') {
-        const fields = { ...form, tingkat: tingkatFilter };
+        const fields = { ...form, tingkat: tingkatFilter, bab: Number(form.bab) };
         await saveMateriKategori(editing.id, fields);
+      } else if (editing.kind === 'cpTp') {
+        await saveCpTp(tingkatFilter, { cp: form.cp || '', tp: form.tp || '' });
       }
       editing = null;
       busy = false;
@@ -1339,6 +1373,12 @@ export function bindCmsEvents(root, rerender) {
   });
 
   // ---------- Tab Materi: daftar kategori, drag/reorder ----------
+
+  root.querySelector('#edit-cptp-btn')?.addEventListener('click', () => {
+    editing = { kind: 'cpTp', id: null };
+    formError = '';
+    rerender();
+  });
 
   root.querySelector('#add-materikategori-btn')?.addEventListener('click', () => {
     editing = { kind: 'materiKategori', id: null };

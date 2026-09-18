@@ -62,17 +62,17 @@ function sidebarItems() {
     return [
       { path: '/dashboard', icon: 'chart', label: 'Dashboard Kelas' },
       { path: '/cms', icon: 'settings', label: 'Kelola Konten' },
+      { path: '/materi', icon: 'backpack', label: 'Pratinjau Materi' },
       { path: '/mufrodat', icon: 'book', label: 'Pratinjau Mufrodat' },
       { path: '/muhadatsah', icon: 'message', label: 'Pratinjau Muhadatsah' },
-      { path: '/materi', icon: 'backpack', label: 'Pratinjau Materi' },
       { path: '/kuis', icon: 'clipboard', label: 'Pratinjau Kuis' },
     ];
   }
   return [
     { path: '/', icon: 'home', label: 'Beranda' },
+    { path: '/materi', icon: 'backpack', label: 'Materi' },
     { path: '/mufrodat', icon: 'book', label: 'Mufrodat' },
     { path: '/muhadatsah', icon: 'message', label: 'Muhadatsah' },
-    { path: '/materi', icon: 'backpack', label: 'Materi' },
     { path: '/kuis', icon: 'clipboard', label: 'Kuis' },
     { path: '/rapor', icon: 'trophy', label: 'Rapor' },
   ];
@@ -91,8 +91,8 @@ function bottomNavItemsFor() {
   }
   return [
     { path: '/', icon: 'home', label: 'Beranda' },
-    { path: '/mufrodat', icon: 'book', label: 'Mufrodat' },
     { path: '/materi', icon: 'backpack', label: 'Materi' },
+    { path: '/mufrodat', icon: 'book', label: 'Mufrodat' },
     { path: '/kuis', icon: 'clipboard', label: 'Kuis' },
     { path: '/profil', icon: 'user', label: 'Profil' },
   ];
@@ -182,10 +182,10 @@ function shell(seg1) {
           <span class="app-header__title">${titleFor(seg1)}</span>
         </div>
         <div class="app-header__actions">
-          <button class="header-btn" id="info-btn" title="Tentang Aplikasi" aria-label="Tentang Aplikasi">
+          <button class="header-btn header-btn--accent" id="info-btn" title="Tentang Aplikasi" aria-label="Tentang Aplikasi">
             ${icon('bulb', { size: 17 })}
           </button>
-          <button class="header-btn" id="logout-btn" title="Keluar" aria-label="Keluar dari akun">
+          <button class="header-btn header-btn--danger" id="logout-btn" title="Keluar" aria-label="Keluar dari akun">
             ${icon('logout', { size: 17 })}
           </button>
         </div>
@@ -393,6 +393,11 @@ function router() {
       </div>
     `;
   }
+
+  // Setiap kali pindah halaman/route, scroll halaman kembali ke paling atas (top: 0).
+  window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
 }
 
 setRouter(router);

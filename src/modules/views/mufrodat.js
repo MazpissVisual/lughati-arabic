@@ -44,7 +44,7 @@ export function renderMufrodatList() {
 
   return `
     <h1 style="font-size:var(--fs-2xl); font-weight:var(--fw-bold); color:var(--color-ink-900);">Modul Mufrodat</h1>
-    <p style="color:var(--color-ink-500); font-size:var(--fs-sm); margin:var(--space-2) 0 var(--space-6);">
+    <p style="color:var(--color-ink-500); font-size:var(--fs-sm); margin:var(--space-1) 0 var(--space-4);">
       Kuasai kosakata baru melalui flashcard interaktif dan audio pelafalan asli.
     </p>
     <div class="lesson-grid">${cards}</div>
@@ -73,7 +73,7 @@ export function renderMufrodatLesson(lessonId, index = 0) {
 
   return `
     <div class="lesson-page-compact">
-      <a href="/mufrodat" style="font-size:var(--fs-xs); color:var(--color-ink-500); display:inline-flex; align-items:center; gap:4px;">${icon('chevronLeft', { size: 13 })} ${lesson.subtitle}</a>
+      <a href="/mufrodat" class="back-link">${icon('chevronLeft', { size: 13 })} ${lesson.subtitle}</a>
 
       <div class="flashcard-duo">
         <div class="flashcard-split flashcard-image">

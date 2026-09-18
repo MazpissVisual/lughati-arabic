@@ -32,7 +32,7 @@ export function renderMuhadatsahList() {
 
   return `
     <h1 style="font-size:var(--fs-2xl); font-weight:var(--fw-bold); color:var(--color-ink-900);">Muhadatsah</h1>
-    <p style="color:var(--color-ink-500); font-size:var(--fs-sm); margin:var(--space-2) 0 var(--space-6); max-width:640px;">
+    <p style="color:var(--color-ink-500); font-size:var(--fs-sm); margin:var(--space-1) 0 var(--space-4); max-width:640px;">
       Latih kemampuan berbicara bahasa Arab Anda melalui percakapan sehari-hari. Pilih topik di bawah ini untuk memulai latihan.
     </p>
     <div class="lesson-grid">${cards}</div>
@@ -58,7 +58,7 @@ export function renderMuhadatsahDetail(topikId) {
   return `
     <div class="chat-header">
       <div>
-        <a href="/muhadatsah" class="chat-header__back" style="display:inline-flex; align-items:center; gap:4px;">${icon('chevronLeft', { size: 12 })} ${topik.unit}</a>
+        <a href="/muhadatsah" class="chat-header__back" style="display:inline-flex; align-items:center; gap:4px;">${icon('chevronLeft', { size: 14 })} Kembali</a>
         <h1 class="chat-header__title">${topik.title}</h1>
       </div>
       <span class="chat-toggle">Tampilkan Terjemahan <span class="chat-toggle__switch"></span></span>

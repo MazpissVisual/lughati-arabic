@@ -360,7 +360,7 @@ export function renderKuisKategoriList(jenis) {
 
   return `
     <div class="animate-fade-in" style="display:flex; flex-direction:column; gap:var(--space-4);">
-      <a href="/kuis" style="font-size:var(--fs-xs); color:var(--color-ink-500); display:inline-flex; align-items:center; gap:4px;">${icon('chevronLeft', { size: 12 })} Knowledge Checks</a>
+      <a href="/kuis" class="back-link">${icon('chevronLeft', { size: 12 })} Knowledge Checks</a>
       <div>
         <h1 style="font-size:var(--fs-2xl); font-weight:var(--fw-bold); color:var(--color-ink-900);">${m ? m.title : 'Pilih Bab'}</h1>
         <p style="color:var(--color-ink-500); font-size:var(--fs-sm); margin-top:var(--space-2);">Pilih bab yang ingin kamu uji.</p>
@@ -462,7 +462,7 @@ export function renderQuiz() {
   if (quizState.questions.length === 0) {
     return `
       <div class="animate-fade-in" style="display:flex; flex-direction:column; gap:var(--space-4);">
-        <a href="${backHref}" style="font-size:var(--fs-xs); color:var(--color-ink-500); display:inline-flex; align-items:center; gap:4px;">${icon('chevronLeft', { size: 12 })} ${backLabel}</a>
+        <a href="${backHref}" class="back-link">${icon('chevronLeft', { size: 12 })} ${backLabel}</a>
         <div class="card" style="text-align:center; padding:var(--space-8); color:var(--color-ink-500);">
           <div style="margin-bottom:var(--space-2);">${icon('info', { size: 24 })}</div>
           Soal untuk bab ini belum cukup (minimal ${MIN_POOL_SIZE} item). Coba bab lain atau tunggu guru menambah materi.
@@ -552,7 +552,7 @@ export function renderQuiz() {
 
   return `
     <div class="lesson-page-compact animate-fade-in">
-      <a href="${backHref}" style="font-size:var(--fs-xs); color:var(--color-ink-500); display:inline-flex; align-items:center; gap:4px;">${icon('chevronLeft', { size: 12 })} ${backLabel}</a>
+      <a href="${backHref}" class="back-link">${icon('chevronLeft', { size: 12 })} ${backLabel}</a>
       <div>
         <h1 style="font-size:var(--fs-lg); font-weight:var(--fw-bold); color:var(--color-ink-900);">${kategori?.nama || ''}</h1>
       </div>
@@ -647,7 +647,7 @@ function renderTtsQuiz(kategori, backHref, backLabel) {
   if (!puzzle) {
     return `
       <div class="animate-fade-in" style="display:flex; flex-direction:column; gap:var(--space-4);">
-        <a href="${backHref}" style="font-size:var(--fs-xs); color:var(--color-ink-500); display:inline-flex; align-items:center; gap:4px;">${icon('chevronLeft', { size: 12 })} ${backLabel}</a>
+        <a href="${backHref}" class="back-link">${icon('chevronLeft', { size: 12 })} ${backLabel}</a>
         <div class="card" style="text-align:center; padding:var(--space-8); color:var(--color-ink-500);">
           <div style="margin-bottom:var(--space-2);">${icon('info', { size: 24 })}</div>
           Soal untuk bab ini belum cukup. Coba bab lain atau tunggu guru menambah materi.
@@ -724,7 +724,7 @@ function renderTtsQuiz(kategori, backHref, backLabel) {
 
   return `
     <div class="animate-fade-in" style="display:flex; flex-direction:column; gap:var(--space-4);">
-      <a href="${backHref}" style="font-size:var(--fs-xs); color:var(--color-ink-500); display:inline-flex; align-items:center; gap:4px;">${icon('chevronLeft', { size: 12 })} ${backLabel}</a>
+      <a href="${backHref}" class="back-link">${icon('chevronLeft', { size: 12 })} ${backLabel}</a>
       <div>
         <h1 style="font-size:var(--fs-lg); font-weight:var(--fw-bold); color:var(--color-ink-900);">${kategori?.nama || ''}</h1>
       </div>

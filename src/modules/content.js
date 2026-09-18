@@ -13,6 +13,7 @@ let kuisKategoriCache = []; // [{id, jenis, nama, urutan, tingkat}] — jenis: '
 let kuisSoalCache = []; // [{id, kategoriId, glyph, latin, arti, makhraj, desc, urutan}]
 let materiKategoriCache = []; // [{id, judul, tingkat, urutan}]
 let materiBlokCache = []; // [{id, kategoriId, tipe, urutan, ...}]
+let cpTpCache = {}; // { [tingkat]: { cp, tp } } — Capaian & Tujuan Pembelajaran, beda tiap tingkat
 let loaded = false;
 
 export async function loadContent() {
@@ -63,10 +64,15 @@ export async function loadContent() {
       materiBlokList.push({ id: blokDoc.id, kategoriId: kategoriDoc.id, urutan: idx, ...blokDoc.data() });
     });
   }));
-  materiKategoriList.sort((a, b) => (a.urutan ?? 0) - (b.urutan ?? 0));
+  materiKategoriList.sort((a, b) => (a.bab || 0) - (b.bab || 0));
   materiBlokList.sort((a, b) => (a.urutan ?? 0) - (b.urutan ?? 0));
   materiKategoriCache = materiKategoriList;
   materiBlokCache = materiBlokList;
+
+  const cpTpSnap = await getDocs(collection(db, 'materiPengaturan'));
+  const cpTpMap = {};
+  cpTpSnap.docs.forEach(d => { cpTpMap[d.id] = d.data(); });
+  cpTpCache = cpTpMap;
 
   loaded = true;
 }
@@ -266,7 +272,6 @@ export async function reorderKuisSoalItems(kategoriId, orderedIds) {
 
 export async function saveMateriKategori(kategoriId, fields) {
   const ref = kategoriId ? doc(db, 'materi', kategoriId) : doc(collection(db, 'materi'));
-  if (!kategoriId) fields.urutan = getMateriKategori(fields.tingkat).length;
   await setDoc(ref, fields, { merge: true });
   await loadContent();
 }
@@ -295,7 +300,7 @@ export async function deleteMateriBlok(kategoriId, blokId) {
 export async function reorderMateriKategori(orderedIds) {
   const batch = writeBatch(db);
   orderedIds.forEach((id, idx) => {
-    batch.update(doc(db, 'materi', id), { urutan: idx });
+    batch.update(doc(db, 'materi', id), { bab: idx + 1 });
   });
   await batch.commit();
   await loadContent();
@@ -307,5 +312,16 @@ export async function reorderMateriBlok(kategoriId, orderedIds) {
     batch.update(doc(db, 'materi', kategoriId, 'blok', id), { urutan: idx });
   });
   await batch.commit();
+  await loadContent();
+}
+
+// --- CP & TP (Capaian Pembelajaran & Tujuan Pembelajaran) — 1 dokumen per tingkat ---
+
+export function getCpTp(tingkat) {
+  return cpTpCache[tingkat] || { cp: '', tp: '' };
+}
+
+export async function saveCpTp(tingkat, fields) {
+  await setDoc(doc(db, 'materiPengaturan', tingkat), fields);
   await loadContent();
 }
