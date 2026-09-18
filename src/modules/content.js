@@ -9,8 +9,10 @@ import { db } from './firebase.js';
 let kategoriCache = [];
 let kosakataCache = [];
 let topikMuhadatsahCache = [];
-let kuisKategoriCache = []; // [{id, jenis, nama, urutan}] — jenis: 'huruf' | 'suara' | 'kosakata'
+let kuisKategoriCache = []; // [{id, jenis, nama, urutan, tingkat}] — jenis: 'huruf' | 'suara' | 'kosakata' | 'susun' | 'tts'
 let kuisSoalCache = []; // [{id, kategoriId, glyph, latin, arti, makhraj, desc, urutan}]
+let materiKategoriCache = []; // [{id, judul, tingkat, urutan}]
+let materiBlokCache = []; // [{id, kategoriId, tipe, urutan, ...}]
 let loaded = false;
 
 export async function loadContent() {
@@ -51,28 +53,76 @@ export async function loadContent() {
   kuisKategoriCache = kuisKategoriList;
   kuisSoalCache = kuisSoalList;
 
+  const materiSnap = await getDocs(collection(db, 'materi'));
+  const materiKategoriList = [];
+  const materiBlokList = [];
+  await Promise.all(materiSnap.docs.map(async (kategoriDoc) => {
+    materiKategoriList.push({ id: kategoriDoc.id, ...kategoriDoc.data() });
+    const blokSnap = await getDocs(collection(db, 'materi', kategoriDoc.id, 'blok'));
+    blokSnap.docs.forEach((blokDoc, idx) => {
+      materiBlokList.push({ id: blokDoc.id, kategoriId: kategoriDoc.id, urutan: idx, ...blokDoc.data() });
+    });
+  }));
+  materiKategoriList.sort((a, b) => (a.urutan ?? 0) - (b.urutan ?? 0));
+  materiBlokList.sort((a, b) => (a.urutan ?? 0) - (b.urutan ?? 0));
+  materiKategoriCache = materiKategoriList;
+  materiBlokCache = materiBlokList;
+
   loaded = true;
 }
 
-export function getKategori() {
-  return kategoriCache;
+export function getKategori(tingkat) {
+  return tingkat ? kategoriCache.filter(k => k.tingkat === tingkat) : kategoriCache;
 }
 
 export function getKosakata() {
   return kosakataCache;
 }
 
-export function getTopikMuhadatsah() {
-  return topikMuhadatsahCache;
+export function getTopikMuhadatsah(tingkat) {
+  return tingkat ? topikMuhadatsahCache.filter(t => t.tingkat === tingkat) : topikMuhadatsahCache;
 }
 
 export function isContentLoaded() {
   return loaded;
 }
 
-export function getKuisKategori(jenis) {
-  const list = jenis ? kuisKategoriCache.filter(k => k.jenis === jenis) : kuisKategoriCache;
+export function getKuisKategori(jenis, tingkat) {
+  let list = jenis ? kuisKategoriCache.filter(k => k.jenis === jenis) : kuisKategoriCache;
+  if (tingkat) list = list.filter(k => k.tingkat === tingkat);
   return list;
+}
+
+export function getMateriKategori(tingkat) {
+  return tingkat ? materiKategoriCache.filter(k => k.tingkat === tingkat) : materiKategoriCache;
+}
+
+export function getMateriBlok(kategoriId) {
+  return materiBlokCache.filter(b => b.kategoriId === kategoriId);
+}
+
+// Migrasi satu-kali untuk konten yang dibuat sebelum fitur tingkat kelas ada (belum punya field
+// `tingkat` sama sekali) — kelompokkan semuanya ke satu tingkat yang dipilih guru lewat tombol CMS,
+// supaya tidak "hilang" dari filter Kelas X/XI/XII manapun. Item yang SUDAH punya tingkat dilewati.
+export function countMissingTingkat() {
+  return {
+    mufrodat: kategoriCache.filter(k => !k.tingkat).length,
+    muhadatsah: topikMuhadatsahCache.filter(t => !t.tingkat).length,
+    kuis: kuisKategoriCache.filter(k => !k.tingkat).length,
+    materi: materiKategoriCache.filter(k => !k.tingkat).length
+  };
+}
+
+export async function migrateMissingTingkat(tingkat) {
+  const batch = writeBatch(db);
+  let count = 0;
+  kategoriCache.filter(k => !k.tingkat).forEach(k => { batch.update(doc(db, 'mufrodat', k.id), { tingkat }); count++; });
+  topikMuhadatsahCache.filter(t => !t.tingkat).forEach(t => { batch.update(doc(db, 'muhadatsah', t.id), { tingkat }); count++; });
+  kuisKategoriCache.filter(k => !k.tingkat).forEach(k => { batch.update(doc(db, 'kuisSoal', k.id), { tingkat }); count++; });
+  materiKategoriCache.filter(k => !k.tingkat).forEach(k => { batch.update(doc(db, 'materi', k.id), { tingkat }); count++; });
+  if (count > 0) await batch.commit();
+  await loadContent();
+  return count;
 }
 
 export function getKuisSoal(kategoriId) {
@@ -113,6 +163,10 @@ export async function saveKata(kategoriId, kataId, fields) {
   const ref = kataId
     ? doc(db, 'mufrodat', kategoriId, 'kata', kataId)
     : doc(collection(db, 'mufrodat', kategoriId, 'kata'));
+  // Item baru wajib dapat `urutan` eksplisit (append di akhir) — kalau tidak, item ini akan
+  // fallback ke urutan berbasis posisi query Firestore (lihat loadContent), yang bisa TABRAKAN
+  // dengan urutan eksplisit item lain (mis. keduanya "0"), bikin urutan akhir acak/salah setelah sort.
+  if (!kataId) fields.urutan = getKosakata().filter(w => w.kategori === kategoriId).length;
   await setDoc(ref, fields);
   await loadContent();
 }
@@ -164,6 +218,7 @@ export async function reorderKata(kategoriId, orderedIds) {
 
 export async function saveKuisKategori(kategoriId, fields) {
   const ref = kategoriId ? doc(db, 'kuisSoal', kategoriId) : doc(collection(db, 'kuisSoal'));
+  if (!kategoriId) fields.urutan = getKuisKategori(fields.jenis).length;
   await setDoc(ref, fields, { merge: true });
   await loadContent();
 }
@@ -179,6 +234,7 @@ export async function saveKuisSoalItem(kategoriId, soalId, fields) {
   const ref = soalId
     ? doc(db, 'kuisSoal', kategoriId, 'soal', soalId)
     : doc(collection(db, 'kuisSoal', kategoriId, 'soal'));
+  if (!soalId) fields.urutan = getKuisSoal(kategoriId).length;
   await setDoc(ref, fields);
   await loadContent();
 }
@@ -201,6 +257,54 @@ export async function reorderKuisSoalItems(kategoriId, orderedIds) {
   const batch = writeBatch(db);
   orderedIds.forEach((id, idx) => {
     batch.update(doc(db, 'kuisSoal', kategoriId, 'soal', id), { urutan: idx });
+  });
+  await batch.commit();
+  await loadContent();
+}
+
+// --- CMS: Materi Interaktif (materi/{kategoriId} + subkoleksi blok/{blokId}) ---
+
+export async function saveMateriKategori(kategoriId, fields) {
+  const ref = kategoriId ? doc(db, 'materi', kategoriId) : doc(collection(db, 'materi'));
+  if (!kategoriId) fields.urutan = getMateriKategori(fields.tingkat).length;
+  await setDoc(ref, fields, { merge: true });
+  await loadContent();
+}
+
+export async function deleteMateriKategori(kategoriId) {
+  const blokSnap = await getDocs(collection(db, 'materi', kategoriId, 'blok'));
+  await Promise.all(blokSnap.docs.map(d => deleteDoc(d.ref)));
+  await deleteDoc(doc(db, 'materi', kategoriId));
+  await loadContent();
+}
+
+export async function saveMateriBlok(kategoriId, blokId, fields) {
+  const ref = blokId
+    ? doc(db, 'materi', kategoriId, 'blok', blokId)
+    : doc(collection(db, 'materi', kategoriId, 'blok'));
+  if (!blokId) fields.urutan = getMateriBlok(kategoriId).length;
+  await setDoc(ref, fields);
+  await loadContent();
+}
+
+export async function deleteMateriBlok(kategoriId, blokId) {
+  await deleteDoc(doc(db, 'materi', kategoriId, 'blok', blokId));
+  await loadContent();
+}
+
+export async function reorderMateriKategori(orderedIds) {
+  const batch = writeBatch(db);
+  orderedIds.forEach((id, idx) => {
+    batch.update(doc(db, 'materi', id), { urutan: idx });
+  });
+  await batch.commit();
+  await loadContent();
+}
+
+export async function reorderMateriBlok(kategoriId, orderedIds) {
+  const batch = writeBatch(db);
+  orderedIds.forEach((id, idx) => {
+    batch.update(doc(db, 'materi', kategoriId, 'blok', id), { urutan: idx });
   });
   await batch.commit();
   await loadContent();

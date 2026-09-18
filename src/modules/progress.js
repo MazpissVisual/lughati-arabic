@@ -147,7 +147,7 @@ export function isBookmarked(type, id) {
   return (data.bookmarks || []).includes(`${type}:${id}`);
 }
 
-export function saveQuizScore(score, total, quizType = 'Huruf') {
+export function saveQuizScore(score, total, quizType = 'Huruf', durationSec = null) {
   const data = getProgress();
   const xpEarned = score * 20 + (score === total ? 50 : 0); // Bonus 50 for 100%
   data.xp = (data.xp || 0) + xpEarned;
@@ -160,11 +160,22 @@ export function saveQuizScore(score, total, quizType = 'Huruf') {
     score,
     total,
     type: quizType,
-    date: new Date().toISOString()
+    date: new Date().toISOString(),
+    // null untuk attempt lama (sebelum fitur ini ada) atau kalau start time-nya tidak sempat kecatat.
+    durationSec
   });
   checkAndUnlockBadges(data);
   saveProgress(data);
   return { xpEarned };
+}
+
+// Format durasi pengerjaan kuis (detik) jadi "1m 05s" / "42s" — dipakai di Rapor & dashboard guru.
+export function formatDuration(durationSec) {
+  if (durationSec == null || durationSec < 0) return null;
+  const total = Math.round(durationSec);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return m > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
 }
 
 export function getQuizScores() {

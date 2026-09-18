@@ -1,11 +1,20 @@
 import { getKategori, getKosakata } from '../content.js';
+import { getMyKelasInfo } from '../kelas.js';
+import { getCurrentRole } from '../auth.js';
 import { markWordLearned, isWordLearned } from '../progress.js';
 import { playAudioOrSpeak } from '../speech.js';
 import { icon } from '../icons.js';
 import { navigate } from '../router.js';
 
+// Guru (Pratinjau Mufrodat) tetap lihat semua tingkat; murid difilter sesuai tingkat kelasnya
+// (murid yang belum join kelas tetap lihat semua, biar tidak "nyangkut" tanpa materi sama sekali).
+function myKategoriList() {
+  const tingkat = getCurrentRole() === 'murid' ? getMyKelasInfo().tingkat : null;
+  return getKategori(tingkat);
+}
+
 export function renderMufrodatList() {
-  const kategori = getKategori();
+  const kategori = myKategoriList();
   const kosakata = getKosakata();
   const lessons = kategori.filter(k => k.id !== 'semua');
   const cards = lessons.map(lesson => {
@@ -43,7 +52,7 @@ export function renderMufrodatList() {
 }
 
 export function renderMufrodatLesson(lessonId, index = 0) {
-  const lesson = getKategori().find(k => k.id === lessonId);
+  const lesson = myKategoriList().find(k => k.id === lessonId);
   if (!lesson) return `<div class="card">Modul tidak ditemukan. <a href="/mufrodat">Kembali</a></div>`;
 
   const words = getKosakata().filter(w => w.kategori === lessonId);

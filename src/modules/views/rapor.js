@@ -1,7 +1,7 @@
 // Halaman "Rapor" (murid): track record pengerjaan kuis (benar/salah tiap sesi) + catatan guru
 // dalam 3 level terpisah — catatan kelas (broadcast), catatan khusus murid ini, dan catatan yang
 // nempel di satu baris riwayat pengerjaan tertentu.
-import { getQuizScores } from '../progress.js';
+import { getQuizScores, formatDuration } from '../progress.js';
 import { getMyKelasInfo } from '../kelas.js';
 import { getCatatanKelas, getCatatanMurid, getCatatanPengerjaan } from '../catatan.js';
 import { getCurrentUser } from '../auth.js';
@@ -41,6 +41,7 @@ export function renderRapor() {
           <div>
             <div class="rapor-attempt__type">${s.type || 'Kuis'}</div>
             <div class="rapor-attempt__date">${formatDate(s.date)}</div>
+            <div class="rapor-attempt__date">Waktu pengerjaan = ${formatDuration(s.durationSec) || '----'}</div>
           </div>
           <div class="rapor-attempt__score ${isGood ? 'is-good' : 'is-bad'}">${s.score}/${s.total} <span>(${pct}%)</span></div>
         </div>

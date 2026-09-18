@@ -5,6 +5,7 @@ import './styles/components.css';
 import { renderHome, bindHomeEvents } from './modules/views/home.js';
 import { renderMufrodatList, renderMufrodatLesson, bindMufrodatListEvents, bindMufrodatLessonEvents } from './modules/views/mufrodat.js';
 import { renderMuhadatsahList, renderMuhadatsahDetail, bindMuhadatsahListEvents, bindMuhadatsahDetailEvents } from './modules/views/muhadatsah.js';
+import { renderMateriList, renderMateriDetail, bindMateriListEvents, bindMateriDetailEvents } from './modules/views/materi.js';
 import { renderKuisList, bindKuisListEvents, renderKuisKategoriList, bindKuisKategoriListEvents, renderQuiz, bindQuizEvents, startQuiz } from './modules/views/kuis.js';
 import { renderProfil, bindProfilEvents, mountProfil } from './modules/views/profil.js';
 import { renderRapor, bindRaporEvents, mountRapor } from './modules/views/rapor.js';
@@ -63,6 +64,7 @@ function sidebarItems() {
       { path: '/cms', icon: 'settings', label: 'Kelola Konten' },
       { path: '/mufrodat', icon: 'book', label: 'Pratinjau Mufrodat' },
       { path: '/muhadatsah', icon: 'message', label: 'Pratinjau Muhadatsah' },
+      { path: '/materi', icon: 'backpack', label: 'Pratinjau Materi' },
       { path: '/kuis', icon: 'clipboard', label: 'Pratinjau Kuis' },
     ];
   }
@@ -70,6 +72,7 @@ function sidebarItems() {
     { path: '/', icon: 'home', label: 'Beranda' },
     { path: '/mufrodat', icon: 'book', label: 'Mufrodat' },
     { path: '/muhadatsah', icon: 'message', label: 'Muhadatsah' },
+    { path: '/materi', icon: 'backpack', label: 'Materi' },
     { path: '/kuis', icon: 'clipboard', label: 'Kuis' },
     { path: '/rapor', icon: 'trophy', label: 'Rapor' },
   ];
@@ -89,7 +92,7 @@ function bottomNavItemsFor() {
   return [
     { path: '/', icon: 'home', label: 'Beranda' },
     { path: '/mufrodat', icon: 'book', label: 'Mufrodat' },
-    { path: '/muhadatsah', icon: 'message', label: 'Muhadatsah' },
+    { path: '/materi', icon: 'backpack', label: 'Materi' },
     { path: '/kuis', icon: 'clipboard', label: 'Kuis' },
     { path: '/profil', icon: 'user', label: 'Profil' },
   ];
@@ -98,6 +101,7 @@ function bottomNavItemsFor() {
 function titleFor(seg1) {
   if (seg1 === 'mufrodat') return 'Modul Mufrodat';
   if (seg1 === 'muhadatsah') return 'Muhadatsah';
+  if (seg1 === 'materi') return 'Materi';
   if (seg1 === 'kuis') return 'Knowledge Checks';
   if (seg1 === 'rapor') return 'Rapor';
   if (seg1 === 'profil') return authRole === 'guru' ? 'Profil Akun' : 'Profil & Progres';
@@ -109,6 +113,7 @@ function titleFor(seg1) {
 function activeNavPath(seg1) {
   if (seg1 === 'mufrodat') return '/mufrodat';
   if (seg1 === 'muhadatsah') return '/muhadatsah';
+  if (seg1 === 'materi') return '/materi';
   if (seg1 === 'kuis') return '/kuis';
   if (seg1 === 'rapor') return '/rapor';
   if (seg1 === 'cms') return '/cms';
@@ -298,6 +303,14 @@ function router() {
     } else {
       view.innerHTML = renderMuhadatsahList();
       bindMuhadatsahListEvents(view);
+    }
+  } else if (seg1 === 'materi') {
+    if (seg2) {
+      view.innerHTML = renderMateriDetail(seg2);
+      bindMateriDetailEvents(view);
+    } else {
+      view.innerHTML = renderMateriList();
+      bindMateriListEvents(view);
     }
   } else if (seg1 === 'kuis') {
     if (seg2 === 'main') {

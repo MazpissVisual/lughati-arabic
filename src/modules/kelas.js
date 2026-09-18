@@ -6,15 +6,16 @@ function slugify(str) {
   return str.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-export async function createKelas(nama, guruUid) {
+export async function createKelas(nama, tingkat, guruUid) {
   const id = `${slugify(nama)}-${Math.random().toString(36).slice(2, 6)}`;
-  await setDoc(doc(db, 'kelas', id), { nama, guruId: guruUid });
+  await setDoc(doc(db, 'kelas', id), { nama, tingkat, guruId: guruUid });
   invalidateKelasCache();
   return id;
 }
 
-export async function renameKelas(kelasId, nama) {
-  await setDoc(doc(db, 'kelas', kelasId), { nama }, { merge: true });
+export async function renameKelas(kelasId, nama, tingkat) {
+  const fields = tingkat ? { nama, tingkat } : { nama };
+  await setDoc(doc(db, 'kelas', kelasId), fields, { merge: true });
   invalidateKelasCache();
 }
 
@@ -99,22 +100,29 @@ export async function joinKelas(muridUid, kelasId) {
   return kelas;
 }
 
+// Dipakai murid untuk keluar dari kelas saat ini (mis. salah gabung) — progres belajarnya tidak
+// ikut terhapus, cuma lepas dari kelas, sama seperti saat guru menghapus kelas.
+export async function leaveKelas(muridUid) {
+  await setDoc(doc(db, 'murid', muridUid), { kelasId: null }, { merge: true });
+  await loadMyKelasInfo(muridUid, 'murid');
+}
+
 // Cache in-memory untuk murid yang sedang login: dipakai profil.js secara sinkron.
-let myKelasInfo = { kelasId: null, kelasNama: null };
+let myKelasInfo = { kelasId: null, kelasNama: null, tingkat: null };
 
 export async function loadMyKelasInfo(uid, role) {
   if (role !== 'murid') {
-    myKelasInfo = { kelasId: null, kelasNama: null };
+    myKelasInfo = { kelasId: null, kelasNama: null, tingkat: null };
     return;
   }
   const snap = await getDoc(doc(db, 'murid', uid));
   const kelasId = snap.exists() ? snap.data().kelasId : null;
   if (!kelasId) {
-    myKelasInfo = { kelasId: null, kelasNama: null };
+    myKelasInfo = { kelasId: null, kelasNama: null, tingkat: null };
     return;
   }
   const kelas = await getKelasById(kelasId);
-  myKelasInfo = { kelasId, kelasNama: kelas?.nama || kelasId };
+  myKelasInfo = { kelasId, kelasNama: kelas?.nama || kelasId, tingkat: kelas?.tingkat || null };
 }
 
 export function getMyKelasInfo() {

@@ -5,21 +5,30 @@ import {
   reorderKategori, reorderKata,
   getKuisKategori, getKuisSoal,
   saveKuisKategori, deleteKuisKategori, saveKuisSoalItem, deleteKuisSoalItem,
-  reorderKuisKategori, reorderKuisSoalItems
+  reorderKuisKategori, reorderKuisSoalItems,
+  getMateriKategori, getMateriBlok,
+  saveMateriKategori, deleteMateriKategori, saveMateriBlok, deleteMateriBlok,
+  reorderMateriKategori, reorderMateriBlok,
+  countMissingTingkat, migrateMissingTingkat
 } from '../content.js';
 import { icon } from '../icons.js';
 import { confirmDialog } from '../ui.js';
+import { buildCrossword, validateCrossword } from './kuis.js';
 
 const ARABIC_RE = /[؀-ۿ]/;
 
-const KUIS_JENIS_LABEL = { huruf: 'Tebak Huruf', suara: 'Listening Challenge', kosakata: 'Tebak Kosakata' };
+const KUIS_JENIS_LABEL = { suara: 'Listening Challenge', kosakata: 'Tebak Kosakata', susun: 'Penyusunan Kata', tts: 'Teka-Teki Silang' };
+const TINGKAT_LIST = ['X', 'XI', 'XII'];
 
-let tab = 'mufrodat'; // 'mufrodat' | 'muhadatsah' | 'kuis'
-let kuisJenisFilter = 'huruf'; // 'huruf' | 'suara' | 'kosakata' — jenis kuis yang lagi dikelola
-let editing = null; // { kind: 'kategori'|'kata'|'topik'|'kuisKategori'|'kuisSoal', id, kategoriId } | null
+let tab = 'mufrodat'; // 'mufrodat' | 'muhadatsah' | 'kuis' | 'materi'
+let tingkatFilter = 'X'; // 'X' | 'XI' | 'XII' — tingkat kelas yang lagi dikelola, dipakai di semua tab
+let kuisJenisFilter = 'suara'; // 'suara' | 'kosakata' | 'susun' | 'tts' — jenis kuis yang lagi dikelola
+let editing = null; // { kind: 'kategori'|'kata'|'topik'|'kuisKategori'|'kuisSoal'|'materiKategori', id, kategoriId } | null
 let formError = '';
 let busy = false;
 let dialogRows = []; // [{ speaker, side, arabic, translation }] — dipakai saat editing.kind === 'topik'
+let tabelRows = []; // string[][] — dipakai saat manage.kind === 'materiBlok' & tipe === 'tabel'
+let materiBlokTipeDraft = 'text'; // 'text' | 'tabel' | 'gambar' — tipe blok yang lagi diisi di form kiri
 
 // Split-view "Kelola Kata"/"Kelola Soal": form tambah/edit item di kiri, daftar item di kanan,
 // tanpa pindah halaman tiap kali tambah satu item baru (dipakai untuk isi banyak kata/soal berturut-turut).
@@ -69,9 +78,34 @@ function validateKuisKategori(fields) {
 }
 
 function validateKuisSoal(fields, jenis) {
+  if (jenis === 'susun') {
+    if (!fields.kalimat || fields.kalimat.trim().split(/\s+/).filter(Boolean).length < 2) return 'Kalimat wajib diisi, minimal 2 kata dipisah spasi.';
+    return null;
+  }
+  if (jenis === 'tts') {
+    if (!fields.jawaban || fields.jawaban.trim().replace(/[^a-zA-Z]/g, '').length < 2) return 'Jawaban wajib diisi (huruf latin, minimal 2 huruf).';
+    if (!fields.petunjuk || fields.petunjuk.trim().length < 2) return 'Petunjuk/clue wajib diisi.';
+    return null;
+  }
   if (!fields.glyph || !ARABIC_RE.test(fields.glyph)) return 'Teks Arab wajib diisi dengan karakter Arab yang valid.';
   if (!fields.latin || fields.latin.trim().length < 1) return 'Latin/transliterasi wajib diisi.';
   if (jenis === 'kosakata' && (!fields.arti || !fields.arti.trim())) return 'Arti wajib diisi untuk soal kosakata.';
+  return null;
+}
+
+function validateMateriKategori(fields) {
+  if (!fields.judul || fields.judul.trim().length < 2) return 'Judul materi wajib diisi (minimal 2 karakter).';
+  return null;
+}
+
+function validateMateriBlok(fields, tipe) {
+  if (tipe === 'text') {
+    if (!fields.isi || fields.isi.trim().length < 2) return 'Isi teks wajib diisi.';
+  } else if (tipe === 'gambar') {
+    if (!fields.caption) fields.caption = '';
+  } else if (tipe === 'tabel') {
+    if (tabelRows.length === 0 || tabelRows.every(r => r.every(c => !c.trim()))) return 'Tabel minimal harus punya 1 baris berisi.';
+  }
   return null;
 }
 
@@ -99,10 +133,31 @@ export function resetCmsState() {
   manageItemId = null;
   manageFormError = '';
   formError = '';
+  materiBlokTipeDraft = 'text';
+  tabelRows = [];
+}
+
+function renderTingkatFilter() {
+  const html = TINGKAT_LIST.map(t => `
+    <button class="segment-btn ${tingkatFilter === t ? 'is-active' : ''}" data-tingkat="${t}">Kelas ${t}</button>
+  `).join('');
+
+  const missing = countMissingTingkat();
+  const totalMissing = missing.mufrodat + missing.muhadatsah + missing.kuis + missing.materi;
+  const migrateNoticeHtml = totalMissing > 0 ? `
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap; padding:var(--space-3) var(--space-4); background:var(--color-accent-50, #FFFBEB);">
+      <span style="font-size:var(--fs-xs); color:var(--color-ink-600);">
+        ${icon('info', { size: 13 })} Ada ${totalMissing} konten lama (dibuat sebelum fitur tingkat kelas ada) yang belum ditandai tingkat, jadi tidak muncul di filter manapun.
+      </span>
+      <button class="btn btn--secondary" id="migrate-tingkat-btn" style="width:auto; height:30px; padding:0 12px; font-size:var(--fs-xs);">Tandai semua sebagai Kelas ${tingkatFilter}</button>
+    </div>
+  ` : '';
+
+  return `<div class="segmented-control">${html}</div>${migrateNoticeHtml}`;
 }
 
 export function renderCms() {
-  const kategori = getKategori();
+  const kategori = getKategori(tingkatFilter);
 
   if (editing) {
     return renderEditPage(kategori);
@@ -113,11 +168,13 @@ export function renderCms() {
   }
 
   const kosakata = getKosakata();
-  const topikList = getTopikMuhadatsah();
+  const topikList = getTopikMuhadatsah(tingkatFilter);
+  const materiKategoriList = getMateriKategori(tingkatFilter);
 
   let tabContent;
   if (tab === 'mufrodat') tabContent = renderMufrodatTab(kategori, kosakata);
   else if (tab === 'muhadatsah') tabContent = renderMuhadatsahTab(topikList);
+  else if (tab === 'materi') tabContent = renderMateriTab(materiKategoriList);
   else tabContent = renderKuisTab();
 
   return `
@@ -125,8 +182,10 @@ export function renderCms() {
       <div class="segmented-control">
         <button class="segment-btn ${tab === 'mufrodat' ? 'is-active' : ''}" data-tab="mufrodat">Mufrodat</button>
         <button class="segment-btn ${tab === 'muhadatsah' ? 'is-active' : ''}" data-tab="muhadatsah">Muhadatsah</button>
+        <button class="segment-btn ${tab === 'materi' ? 'is-active' : ''}" data-tab="materi">Materi</button>
         <button class="segment-btn ${tab === 'kuis' ? 'is-active' : ''}" data-tab="kuis">Kuis</button>
       </div>
+      ${renderTingkatFilter()}
 
       ${tabContent}
     </div>
@@ -179,7 +238,7 @@ function renderMufrodatTab(kategori, kosakata) {
 }
 
 function renderKuisTab() {
-  const kategoriList = getKuisKategori(kuisJenisFilter);
+  const kategoriList = getKuisKategori(kuisJenisFilter, tingkatFilter);
 
   const jenisTabsHtml = Object.keys(KUIS_JENIS_LABEL).map(j => `
     <button class="segment-btn ${kuisJenisFilter === j ? 'is-active' : ''}" data-kuis-jenis="${j}">${KUIS_JENIS_LABEL[j]}</button>
@@ -222,10 +281,48 @@ function renderKuisTab() {
   `;
 }
 
+function renderMateriTab(materiKategoriList) {
+  const cards = materiKategoriList.map((k, kIdx) => {
+    const jumlahBlok = getMateriBlok(k.id).length;
+    return `
+      <div class="card cms-row--clickable" draggable="true" data-materikategori-drag="${k.id}" data-open-materikategori="${k.id}" style="cursor:pointer; padding:var(--space-4); border-bottom:none; display:flex; align-items:flex-start; gap:8px;">
+        <span class="cms-row__controls">
+          <span style="color:var(--color-ink-300); display:flex;" class="drag-handle-desktop-only">${icon('grip', { size: 16 })}</span>
+          ${moveButtons({
+            upAttr: `data-move-materikategori-up="${k.id}"`,
+            downAttr: `data-move-materikategori-down="${k.id}"`,
+            isFirst: kIdx === 0,
+            isLast: kIdx === materiKategoriList.length - 1
+          })}
+        </span>
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-weight:var(--fw-bold); flex:1; min-width:0;">${k.judul}</span>
+            <span class="cms-row__chevron" style="margin-left:0;">${icon('chevronRight', { size: 16 })}</span>
+          </div>
+          <div style="font-size:var(--fs-xs); color:var(--color-ink-400);">${jumlahBlok} blok konten</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap;">
+      <button class="btn btn--primary" style="width:auto;" id="add-materikategori-btn">+ Tambah Materi</button>
+      <span style="font-size:var(--fs-2xs); color:var(--color-ink-400); display:inline-flex; align-items:center; gap:4px;">${icon('grip', { size: 12 })} Seret untuk urutkan · klik untuk kelola isi</span>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+      ${materiKategoriList.length ? cards : `<div class="card" style="text-align:center; padding:var(--space-6); color:var(--color-ink-400); font-size:var(--fs-sm);">Belum ada materi untuk Kelas ${tingkatFilter}.</div>`}
+    </div>
+  `;
+}
+
 // ---------- Split-view "Kelola Kata" / "Kelola Soal" ----------
 
 function renderManagePage() {
-  return manage.kind === 'kata' ? renderManageKata() : renderManageKuisSoal();
+  if (manage.kind === 'kata') return renderManageKata();
+  if (manage.kind === 'materiBlok') return renderManageMateriBlok();
+  return renderManageKuisSoal();
 }
 
 function manageRowHtml({ id, kategoriId, idx, total, glyph, latin, extra, isActive }) {
@@ -292,16 +389,29 @@ function renderManageKuisSoal() {
   const current = manageItemId ? soalList.find(s => s.id === manageItemId) : {};
 
   const rowsHtml = soalList.map((s, idx) => manageRowHtml({
-    id: s.id, idx, total: soalList.length, glyph: s.glyph, latin: s.latin, extra: s.arti, isActive: s.id === manageItemId
+    id: s.id, idx, total: soalList.length, glyph: s.glyph || s.jawaban, latin: s.latin || s.petunjuk, extra: s.arti || s.kalimat, isActive: s.id === manageItemId
   })).join('');
 
-  const formHtml = `
-    ${field('glyph', 'Teks Arab', current.glyph)}
-    ${field('latin', 'Latin/Transliterasi', current.latin)}
-    ${jenis === 'kosakata' ? field('arti', 'Arti (Bahasa Indonesia)', current.arti) : ''}
-    ${jenis !== 'kosakata' ? field('makhraj', 'Makhraj (opsional)', current.makhraj) : ''}
-    ${fieldTextarea('desc', jenis === 'kosakata' ? 'Contoh kalimat (opsional)' : 'Deskripsi cara pengucapan (opsional)', current.desc)}
-  `;
+  let formHtml;
+  if (jenis === 'susun') {
+    formHtml = `
+      ${fieldTextarea('kalimat', 'Kalimat Arab (kata dipisah spasi, ini jawaban benar)', current.kalimat)}
+      ${field('arti', 'Arti/petunjuk (opsional)', current.arti)}
+    `;
+  } else if (jenis === 'tts') {
+    formHtml = `
+      ${field('jawaban', 'Jawaban (huruf latin, tanpa spasi)', current.jawaban)}
+      ${fieldTextarea('petunjuk', 'Petunjuk/Clue', current.petunjuk)}
+    `;
+  } else {
+    formHtml = `
+      ${field('glyph', 'Teks Arab', current.glyph)}
+      ${field('latin', 'Latin/Transliterasi', current.latin)}
+      ${jenis === 'kosakata' ? field('arti', 'Arti (Bahasa Indonesia)', current.arti) : ''}
+      ${jenis !== 'kosakata' ? field('makhraj', 'Makhraj (opsional)', current.makhraj) : ''}
+      ${fieldTextarea('desc', jenis === 'kosakata' ? 'Contoh kalimat (opsional)' : 'Deskripsi cara pengucapan (opsional)', current.desc)}
+    `;
+  }
 
   return renderManageLayout({
     backHref: null,
@@ -311,11 +421,164 @@ function renderManageKuisSoal() {
     formHtml,
     listTitle: `Daftar Soal (${soalList.length})`,
     rowsHtml,
-    emptyText: 'Belum ada soal di bab ini. Isi form di kiri untuk menambahkan.'
+    emptyText: 'Belum ada soal di bab ini. Isi form di kiri untuk menambahkan.',
+    extraHtml: jenis === 'tts' ? renderTtsPreview(soalList) : ''
   });
 }
 
-function renderManageLayout({ title, editKategoriBtn, formTitle, formHtml, listTitle, rowsHtml, emptyText }) {
+// ---------- Preview grid TTS (khusus jenis kuis 'tts') ----------
+// Statis (bukan input) — cuma untuk guru cek hasil generate sebelum dipakai murid. Dipanggil ulang
+// tiap render() biasa, jadi tombol "Generate Ulang" cukup memicu rerender untuk dapat tata letak baru
+// (buildCrossword mengacak tie-break antar kandidat sama-bagus tiap dipanggil, lihat kuis.js).
+function renderTtsPreview(soalList) {
+  if (soalList.length < 2) {
+    return `<div class="card" style="padding:var(--space-4); color:var(--color-ink-500); font-size:var(--fs-xs);">Tambah minimal 2 soal untuk melihat preview grid TTS.</div>`;
+  }
+
+  const puzzle = buildCrossword(soalList);
+  if (!puzzle) return '';
+  const { warnings } = validateCrossword(puzzle);
+
+  const cellMap = new Map();
+  puzzle.words.forEach(w => {
+    for (let i = 0; i < w.jawaban.length; i++) {
+      const row = w.dir === 'v' ? w.row + i : w.row;
+      const col = w.dir === 'h' ? w.col + i : w.col;
+      const key = `${row},${col}`;
+      const existing = cellMap.get(key) || {};
+      cellMap.set(key, { char: w.jawaban[i], number: i === 0 ? w.number : existing.number });
+    }
+  });
+
+  let gridHtml = `<div class="tts-grid" style="display:inline-grid; gap:2px; --cols:${puzzle.cols};">`;
+  for (let r = 0; r < puzzle.rows; r++) {
+    for (let c = 0; c < puzzle.cols; c++) {
+      const cell = cellMap.get(`${r},${c}`);
+      if (!cell) { gridHtml += `<div class="tts-cell tts-cell--blank"></div>`; continue; }
+      gridHtml += `
+        <div class="tts-cell" style="position:relative;">
+          ${cell.number ? `<span class="tts-cell__number">${cell.number}</span>` : ''}
+          <span style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-weight:var(--fw-bold); font-size:var(--fs-sm);">${cell.char}</span>
+        </div>
+      `;
+    }
+  }
+  gridHtml += '</div>';
+
+  const warningsHtml = warnings.length ? `
+    <div style="display:flex; flex-direction:column; gap:4px;">
+      ${warnings.map(w => `<div style="font-size:var(--fs-2xs); color:var(--color-error); display:flex; align-items:flex-start; gap:4px;">${icon('info', { size: 12 })} ${w}</div>`).join('')}
+    </div>
+  ` : `<div style="font-size:var(--fs-2xs); color:var(--color-primary-700); display:flex; align-items:center; gap:4px;">${icon('check', { size: 12 })} Grid valid, semua kata tersambung.</div>`;
+
+  return `
+    <div class="card" style="display:flex; flex-direction:column; gap:var(--space-3); padding:var(--space-4);">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap;">
+        <div style="font-size:var(--fs-sm); font-weight:var(--fw-bold); color:var(--color-ink-900);">Preview Grid TTS</div>
+        <button type="button" class="btn btn--outline" id="tts-regenerate-btn" style="width:auto; height:30px; padding:0 12px; font-size:var(--fs-xs); display:inline-flex; align-items:center; gap:6px;">${icon('refresh', { size: 13 })} Generate Ulang</button>
+      </div>
+      <div style="overflow-x:auto;">${gridHtml}</div>
+      ${warningsHtml}
+    </div>
+  `;
+}
+
+function emptyTabelRow(cols) {
+  return new Array(cols || (tabelRows[0]?.length || 2)).fill('');
+}
+
+function renderTabelEditor() {
+  if (tabelRows.length === 0) tabelRows = [emptyTabelRow(2), emptyTabelRow(2)];
+  const cols = tabelRows[0].length;
+
+  const rowsHtml = tabelRows.map((row, rIdx) => `
+    <div data-tabel-row="${rIdx}" style="display:flex; gap:4px;">
+      ${row.map((cell, cIdx) => `
+        <input type="text" class="tabel-cell" data-row="${rIdx}" data-col="${cIdx}" value="${(cell || '').replace(/"/g, '&quot;')}" placeholder="${rIdx === 0 ? `Header ${cIdx + 1}` : '-'}" style="flex:1; min-width:0; padding:6px 8px; border-radius:var(--radius-sm); border:1px solid var(--color-ink-200); font-size:var(--fs-xs); ${rIdx === 0 ? 'font-weight:var(--fw-bold);' : ''}">
+      `).join('')}
+      <button type="button" class="header-btn" data-remove-tabel-row="${rIdx}" title="Hapus baris" style="flex-shrink:0;" ${tabelRows.length <= 1 ? 'disabled' : ''}>${icon('x', { size: 12 })}</button>
+    </div>
+  `).join('');
+
+  return `
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <span style="font-size:var(--fs-xs); color:var(--color-ink-500);">Tabel (baris pertama = header)</span>
+      <div style="display:flex; flex-direction:column; gap:4px;">${rowsHtml}</div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn btn--secondary" id="add-tabel-row-btn" style="width:auto; height:28px; padding:0 10px; font-size:var(--fs-2xs);">+ Baris</button>
+        <button type="button" class="btn btn--secondary" id="add-tabel-col-btn" style="width:auto; height:28px; padding:0 10px; font-size:var(--fs-2xs);">+ Kolom (${cols})</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderManageMateriBlok() {
+  const kategori = getMateriKategori().find(k => k.id === manage.kategoriId);
+  const blokList = getMateriBlok(manage.kategoriId);
+  const current = manageItemId ? blokList.find(b => b.id === manageItemId) : null;
+  const tipe = current ? current.tipe : materiBlokTipeDraft;
+
+  const rowsHtml = blokList.map((b, idx) => {
+    const label = b.tipe === 'text' ? (b.isi || '').slice(0, 40) : b.tipe === 'tabel' ? `Tabel (${(b.rows || []).length} baris)` : `Gambar${b.caption ? `: ${b.caption}` : ''}`;
+    return `
+      <li class="cms-row cms-row--clickable ${b.id === manageItemId ? 'is-active' : ''}" draggable="true" data-manage-item-drag="${b.id}" data-open-manage-item="${b.id}" style="cursor:pointer;">
+        <span class="cms-row__controls">
+          <span style="color:var(--color-ink-300); display:flex;" class="drag-handle-desktop-only">${icon('grip', { size: 14 })}</span>
+          ${moveButtons({
+            upAttr: `data-move-manage-item-up="${b.id}"`,
+            downAttr: `data-move-manage-item-down="${b.id}"`,
+            isFirst: idx === 0,
+            isLast: idx === blokList.length - 1
+          })}
+        </span>
+        <span class="cms-row__text">[${b.tipe}] ${label}</span>
+        <button type="button" class="header-btn" data-delete-manage-item="${b.id}" title="Hapus" aria-label="Hapus item" style="flex-shrink:0;">${icon('x', { size: 14 })}</button>
+      </li>
+    `;
+  }).join('');
+
+  let tipeFieldsHtml;
+  if (tipe === 'tabel') {
+    if (current) tabelRows = current.rows && current.rows.length ? current.rows.map(r => [...(r.cells || [])]) : tabelRows;
+    tipeFieldsHtml = renderTabelEditor();
+  } else if (tipe === 'gambar') {
+    tipeFieldsHtml = `
+      ${current?.url ? `<img src="${current.url}" alt="" style="width:100%; max-width:180px; border-radius:var(--radius-md);">` : ''}
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:var(--fs-xs); color:var(--color-ink-500);">
+        File Gambar ${current?.url ? '(kosongkan kalau tidak ganti)' : ''}
+        <input type="file" name="gambarFile" accept="image/*" class="input" style="padding:8px;">
+      </label>
+      ${field('caption', 'Caption (opsional)', current?.caption)}
+    `;
+  } else {
+    tipeFieldsHtml = fieldTextarea('isi', 'Isi Teks', current?.isi);
+  }
+
+  const formHtml = `
+    <label style="display:flex; flex-direction:column; gap:4px; font-size:var(--fs-sm); color:var(--color-ink-700);">
+      Tipe Blok
+      <select name="tipe" id="materi-tipe-select" ${manageItemId ? 'disabled' : ''} style="padding:10px 12px; border-radius:var(--radius-md); border:1px solid var(--color-ink-200);">
+        <option value="text" ${tipe === 'text' ? 'selected' : ''}>Teks</option>
+        <option value="tabel" ${tipe === 'tabel' ? 'selected' : ''}>Tabel</option>
+        <option value="gambar" ${tipe === 'gambar' ? 'selected' : ''}>Gambar</option>
+      </select>
+    </label>
+    ${tipeFieldsHtml}
+  `;
+
+  return renderManageLayout({
+    backHref: null,
+    title: kategori ? kategori.judul : 'Kelola Materi',
+    editKategoriBtn: true,
+    formTitle: manageItemId ? 'Edit Blok' : 'Tambah Blok',
+    formHtml,
+    listTitle: `Daftar Blok (${blokList.length})`,
+    rowsHtml,
+    emptyText: 'Belum ada blok konten. Isi form di kiri untuk menambahkan.'
+  });
+}
+
+function renderManageLayout({ title, editKategoriBtn, formTitle, formHtml, listTitle, rowsHtml, emptyText, extraHtml }) {
   return `
     <div class="animate-fade-in" style="display:flex; flex-direction:column; gap:var(--space-4);">
       <button id="manage-back-btn" style="font-size:var(--fs-xs); color:var(--color-ink-500); display:inline-flex; align-items:center; gap:4px; align-self:flex-start;">
@@ -350,6 +613,8 @@ function renderManageLayout({ title, editKategoriBtn, formTitle, formHtml, listT
           </ul>
         </div>
       </div>
+
+      ${extraHtml || ''}
     </div>
   `;
 }
@@ -425,6 +690,14 @@ function renderEditPage(kategori) {
       ${field('icon', 'Nama Icon', data.icon || 'message')}
       ${fieldTextarea('desc', 'Deskripsi', data.desc)}
       ${renderDialogRows()}
+    `;
+  } else if (editing.kind === 'materiKategori') {
+    const list = getMateriKategori();
+    const data = editing.id ? list.find(k => k.id === editing.id) : {};
+    title = editing.id ? 'Edit Materi' : 'Tambah Materi';
+    bodyHtml = `
+      <div style="font-size:var(--fs-xs); color:var(--color-ink-500);">Kelas: <strong>${tingkatFilter}</strong></div>
+      ${field('judul', 'Judul Materi', data.judul)}
     `;
   }
 
@@ -611,7 +884,7 @@ function bindDragKuisKategori(root, rerender) {
       const targetId = el.dataset.kuiskategoriDrag;
       if (!draggedKuisKategoriId || draggedKuisKategoriId === targetId) { draggedKuisKategoriId = null; return; }
 
-      const ids = getKuisKategori(kuisJenisFilter).map(k => k.id);
+      const ids = getKuisKategori(kuisJenisFilter, tingkatFilter).map(k => k.id);
       const from = ids.indexOf(draggedKuisKategoriId);
       const to = ids.indexOf(targetId);
       if (from === -1 || to === -1) { draggedKuisKategoriId = null; return; }
@@ -626,7 +899,7 @@ function bindDragKuisKategori(root, rerender) {
 }
 
 function swapAndReorderKuisKategori(id, direction, rerender) {
-  const ids = getKuisKategori(kuisJenisFilter).map(k => k.id);
+  const ids = getKuisKategori(kuisJenisFilter, tingkatFilter).map(k => k.id);
   const from = ids.indexOf(id);
   const to = from + direction;
   if (to < 0 || to >= ids.length) return;
@@ -813,7 +1086,8 @@ export function bindCmsEvents(root, rerender) {
     const DELETE_CONFIG = {
       kategori: { title: 'Hapus Kategori', message: 'Hapus kategori ini beserta seluruh kata di dalamnya? Tindakan ini tidak dapat dibatalkan.', run: () => deleteKategori(editing.id) },
       topik: { title: 'Hapus Topik Muhadatsah', message: 'Hapus topik muhadatsah ini beserta seluruh dialognya?', run: () => deleteTopikMuhadatsah(editing.id) },
-      kuisKategori: { title: 'Hapus Bab Kuis', message: 'Hapus bab ini beserta seluruh soal di dalamnya? Tindakan ini tidak dapat dibatalkan.', run: () => deleteKuisKategori(editing.id) }
+      kuisKategori: { title: 'Hapus Bab Kuis', message: 'Hapus bab ini beserta seluruh soal di dalamnya? Tindakan ini tidak dapat dibatalkan.', run: () => deleteKuisKategori(editing.id) },
+      materiKategori: { title: 'Hapus Materi', message: 'Hapus materi ini beserta seluruh blok kontennya? Tindakan ini tidak dapat dibatalkan.', run: () => deleteMateriKategori(editing.id) }
     };
     const config = DELETE_CONFIG[editing.kind];
     if (!config) return;
@@ -837,6 +1111,7 @@ export function bindCmsEvents(root, rerender) {
     if (editing.kind === 'kategori') error = validateKategori(form);
     else if (editing.kind === 'topik') error = validateTopik(form, dialogRows);
     else if (editing.kind === 'kuisKategori') error = validateKuisKategori(form);
+    else if (editing.kind === 'materiKategori') error = validateMateriKategori(form);
 
     if (error) {
       formError = error;
@@ -854,14 +1129,17 @@ export function bindCmsEvents(root, rerender) {
         if (!id) throw new Error('ID kategori tidak valid.');
         const { id: _drop, ...fields } = form;
         fields.bab = Number(fields.bab);
+        fields.tingkat = tingkatFilter;
         await saveKategori(id, fields);
       } else if (editing.kind === 'kuisKategori') {
-        const fields = editing.id ? form : { ...form, jenis: kuisJenisFilter };
+        const fields = editing.id ? { ...form, tingkat: tingkatFilter } : { ...form, jenis: kuisJenisFilter, tingkat: tingkatFilter };
         await saveKuisKategori(editing.id, fields);
       } else if (editing.kind === 'topik') {
         const id = editing.id || slugify(form.id || form.title);
         if (!id) throw new Error('ID topik tidak valid.');
         const { id: _drop, ...fields } = form;
+        fields.tingkat = tingkatFilter;
+        if (!editing.id) fields.urutan = getTopikMuhadatsah().length;
         fields.dialog = dialogRows.map(r => ({
           speaker: r.speaker.trim(),
           side: r.side === 'right' ? 'right' : 'left',
@@ -869,6 +1147,9 @@ export function bindCmsEvents(root, rerender) {
           translation: r.translation.trim()
         }));
         await saveTopikMuhadatsah(id, fields);
+      } else if (editing.kind === 'materiKategori') {
+        const fields = { ...form, tingkat: tingkatFilter };
+        await saveMateriKategori(editing.id, fields);
       }
       editing = null;
       busy = false;
@@ -888,8 +1169,8 @@ export function bindCmsEvents(root, rerender) {
   });
 
   root.querySelector('#manage-edit-kategori-btn')?.addEventListener('click', () => {
-    editing = manage.kind === 'kata'
-      ? { kind: 'kategori', id: manage.kategoriId }
+    editing = manage.kind === 'kata' ? { kind: 'kategori', id: manage.kategoriId }
+      : manage.kind === 'materiBlok' ? { kind: 'materiKategori', id: manage.kategoriId }
       : { kind: 'kuisKategori', id: manage.kategoriId };
     formError = '';
     rerender();
@@ -900,6 +1181,7 @@ export function bindCmsEvents(root, rerender) {
       if (e.target.closest('.cms-row__controls') || e.target.closest('[data-delete-manage-item]')) return;
       manageItemId = el.dataset.openManageItem;
       manageFormError = '';
+      tabelRows = [];
       rerender();
     });
   });
@@ -908,15 +1190,17 @@ export function bindCmsEvents(root, rerender) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = e.currentTarget.dataset.deleteManageItem;
+      const label = manage.kind === 'kata' ? 'Kata' : manage.kind === 'materiBlok' ? 'Blok' : 'Soal';
       const ok = await confirmDialog({
-        title: manage.kind === 'kata' ? 'Hapus Kata' : 'Hapus Soal',
-        message: manage.kind === 'kata' ? 'Hapus kata ini dari bab?' : 'Hapus soal ini dari bab?',
+        title: `Hapus ${label}`,
+        message: `Hapus ${label.toLowerCase()} ini?`,
         confirmLabel: 'Ya, Hapus',
         danger: true
       });
       if (!ok) return;
 
       if (manage.kind === 'kata') await deleteKata(manage.kategoriId, id);
+      else if (manage.kind === 'materiBlok') await deleteMateriBlok(manage.kategoriId, id);
       else await deleteKuisSoalItem(manage.kategoriId, id);
 
       if (manageItemId === id) manageItemId = null;
@@ -927,12 +1211,54 @@ export function bindCmsEvents(root, rerender) {
   root.querySelector('#manage-form-cancel-btn')?.addEventListener('click', () => {
     manageItemId = null;
     manageFormError = '';
+    tabelRows = [];
+    rerender();
+  });
+
+  root.querySelector('#tts-regenerate-btn')?.addEventListener('click', () => {
     rerender();
   });
 
   root.querySelector('#manage-remove-gambar-btn')?.addEventListener('click', (e) => {
     root.querySelector('#manage-remove-gambar-flag').value = '1';
     e.currentTarget.closest('div').remove();
+  });
+
+  // ---------- Materi: pilih tipe blok & editor tabel ----------
+
+  root.querySelector('#materi-tipe-select')?.addEventListener('change', (e) => {
+    materiBlokTipeDraft = e.target.value;
+    if (materiBlokTipeDraft === 'tabel') tabelRows = [];
+    rerender();
+  });
+
+  function syncTabelRowsFromDom() {
+    const rowEls = root.querySelectorAll('[data-tabel-row]');
+    tabelRows = Array.from(rowEls).map(rowEl =>
+      Array.from(rowEl.querySelectorAll('.tabel-cell')).map(input => input.value)
+    );
+  }
+
+  root.querySelector('#add-tabel-row-btn')?.addEventListener('click', () => {
+    syncTabelRowsFromDom();
+    tabelRows.push(emptyTabelRow());
+    rerender();
+  });
+
+  root.querySelector('#add-tabel-col-btn')?.addEventListener('click', () => {
+    syncTabelRowsFromDom();
+    tabelRows.forEach(r => r.push(''));
+    rerender();
+  });
+
+  root.querySelectorAll('[data-remove-tabel-row]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      syncTabelRowsFromDom();
+      const idx = Number(e.currentTarget.dataset.removeTabelRow);
+      if (tabelRows.length <= 1) return;
+      tabelRows.splice(idx, 1);
+      rerender();
+    });
   });
 
   root.querySelector('#manage-form')?.addEventListener('submit', async (e) => {
@@ -944,8 +1270,20 @@ export function bindCmsEvents(root, rerender) {
     formData.delete('removeGambar');
     const form = Object.fromEntries(formData.entries());
 
-    const jenis = manage.kind === 'kuisSoal' ? getKuisKategori().find(k => k.id === manage.kategoriId)?.jenis : null;
-    const error = manage.kind === 'kata' ? validateKata(form) : validateKuisSoal(form, jenis);
+    if (manage.kind === 'materiBlok') syncTabelRowsFromDom();
+
+    let error;
+    if (manage.kind === 'kata') {
+      error = validateKata(form);
+    } else if (manage.kind === 'materiBlok') {
+      const existing = manageItemId ? getMateriBlok(manage.kategoriId).find(b => b.id === manageItemId) : null;
+      const tipe = existing ? existing.tipe : materiBlokTipeDraft;
+      error = validateMateriBlok(form, tipe);
+    } else {
+      const jenis = getKuisKategori().find(k => k.id === manage.kategoriId)?.jenis;
+      error = validateKuisSoal(form, jenis);
+    }
+
     if (error) {
       manageFormError = error;
       rerender();
@@ -965,6 +1303,28 @@ export function bindCmsEvents(root, rerender) {
           if (current?.gambarUrl) form.gambarUrl = current.gambarUrl;
         }
         await saveKata(manage.kategoriId, manageItemId, form);
+      } else if (manage.kind === 'materiBlok') {
+        const existing = manageItemId ? getMateriBlok(manage.kategoriId).find(b => b.id === manageItemId) : null;
+        const tipe = existing ? existing.tipe : materiBlokTipeDraft;
+        const fields = { tipe };
+        if (tipe === 'text') {
+          fields.isi = form.isi.trim();
+        } else if (tipe === 'tabel') {
+          // Firestore tidak dukung array-of-array langsung — tiap baris dibungkus objek { cells: [...] }.
+          fields.rows = tabelRows.map(r => ({ cells: r.map(c => (c || '').trim()) }));
+        } else if (tipe === 'gambar') {
+          fields.caption = (form.caption || '').trim();
+          if (gambarFile && gambarFile.size > 0) {
+            fields.url = await uploadKataGambar(manage.kategoriId, manageItemId, gambarFile);
+          } else if (existing?.url) {
+            fields.url = existing.url;
+          } else {
+            throw new Error('Pilih file gambar untuk diunggah.');
+          }
+        }
+        await saveMateriBlok(manage.kategoriId, manageItemId, fields);
+        materiBlokTipeDraft = 'text';
+        tabelRows = [];
       } else {
         await saveKuisSoalItem(manage.kategoriId, manageItemId, form);
       }
@@ -976,5 +1336,104 @@ export function bindCmsEvents(root, rerender) {
       manageBusy = false;
       rerender();
     }
+  });
+
+  // ---------- Tab Materi: daftar kategori, drag/reorder ----------
+
+  root.querySelector('#add-materikategori-btn')?.addEventListener('click', () => {
+    editing = { kind: 'materiKategori', id: null };
+    formError = '';
+    rerender();
+  });
+
+  root.querySelectorAll('[data-open-materikategori]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.cms-row__controls')) return;
+      manage = { kind: 'materiBlok', kategoriId: el.dataset.openMaterikategori };
+      manageItemId = null;
+      manageFormError = '';
+      materiBlokTipeDraft = 'text';
+      tabelRows = [];
+      rerender();
+    });
+  });
+
+  bindDragMateriKategori(root, rerender);
+  bindMateriKategoriMoveButtons(root, rerender);
+
+  root.querySelectorAll('[data-tingkat]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      tingkatFilter = e.currentTarget.dataset.tingkat;
+      rerender();
+    });
+  });
+
+  root.querySelector('#migrate-tingkat-btn')?.addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'Migrasi Konten Lama',
+      message: `Semua mufrodat, muhadatsah, kuis, dan materi lama yang belum punya tingkat akan ditandai sebagai <strong>Kelas ${tingkatFilter}</strong>. Lanjutkan?`,
+      confirmLabel: 'Ya, Tandai',
+      danger: false
+    });
+    if (!ok) return;
+
+    const btn = root.querySelector('#migrate-tingkat-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Memproses...'; }
+    try {
+      await migrateMissingTingkat(tingkatFilter);
+      rerender();
+    } catch (err) {
+      console.error('migrateMissingTingkat failed:', err);
+      if (btn) { btn.disabled = false; btn.textContent = `Tandai semua sebagai Kelas ${tingkatFilter}`; }
+    }
+  });
+}
+
+let draggedMateriKategoriId = null;
+
+function bindDragMateriKategori(root, rerender) {
+  root.querySelectorAll('[data-materikategori-drag]').forEach(el => {
+    el.addEventListener('dragstart', (e) => {
+      draggedMateriKategoriId = el.dataset.materikategoriDrag;
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    el.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const targetId = el.dataset.materikategoriDrag;
+      if (!draggedMateriKategoriId || draggedMateriKategoriId === targetId) { draggedMateriKategoriId = null; return; }
+
+      const ids = getMateriKategori(tingkatFilter).map(k => k.id);
+      const from = ids.indexOf(draggedMateriKategoriId);
+      const to = ids.indexOf(targetId);
+      if (from === -1 || to === -1) { draggedMateriKategoriId = null; return; }
+      ids.splice(from, 1);
+      ids.splice(to, 0, draggedMateriKategoriId);
+      draggedMateriKategoriId = null;
+
+      await reorderMateriKategori(ids);
+      rerender();
+    });
+  });
+}
+
+function swapAndReorderMateriKategori(id, direction, rerender) {
+  const ids = getMateriKategori(tingkatFilter).map(k => k.id);
+  const from = ids.indexOf(id);
+  const to = from + direction;
+  if (to < 0 || to >= ids.length) return;
+  [ids[from], ids[to]] = [ids[to], ids[from]];
+  reorderMateriKategori(ids).then(rerender);
+}
+
+function bindMateriKategoriMoveButtons(root, rerender) {
+  root.querySelectorAll('[data-move-materikategori-up]').forEach(btn => {
+    btn.addEventListener('click', (e) => swapAndReorderMateriKategori(e.currentTarget.dataset.moveMaterikategoriUp, -1, rerender));
+  });
+  root.querySelectorAll('[data-move-materikategori-down]').forEach(btn => {
+    btn.addEventListener('click', (e) => swapAndReorderMateriKategori(e.currentTarget.dataset.moveMaterikategoriDown, 1, rerender));
   });
 }

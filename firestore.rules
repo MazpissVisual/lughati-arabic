@@ -64,6 +64,16 @@ service cloud.firestore {
       allow write: if isGuru();
     }
 
+    match /materi/{kategoriId} {
+      allow read: if isSignedIn();
+      allow write: if isGuru();
+
+      match /blok/{blokId} {
+        allow read: if isSignedIn();
+        allow write: if isGuru();
+      }
+    }
+
     match /hijaiyah/{letterId} {
       allow read: if isSignedIn();
       allow write: if isGuru();

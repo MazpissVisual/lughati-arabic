@@ -1,9 +1,18 @@
 import { getTopikMuhadatsah } from '../content.js';
+import { getMyKelasInfo } from '../kelas.js';
+import { getCurrentRole } from '../auth.js';
 import { playAudioOrSpeak } from '../speech.js';
 import { icon } from '../icons.js';
 
+// Guru (Pratinjau Muhadatsah di sidebar) tetap lihat semua tingkat sekaligus; murid difilter
+// sesuai tingkat kelasnya (murid yang belum join kelas tetap lihat semua, biar tidak "nyangkut").
+function myTopikList() {
+  const tingkat = getCurrentRole() === 'murid' ? getMyKelasInfo().tingkat : null;
+  return getTopikMuhadatsah(tingkat);
+}
+
 export function renderMuhadatsahList() {
-  const cards = getTopikMuhadatsah().map(topik => `
+  const cards = myTopikList().map(topik => `
     <a class="lesson-card" href="/muhadatsah/${topik.id}">
       <div class="lesson-illustration lesson-illustration--indigo">
         <span class="lesson-illustration__badge">${icon(topik.icon, { size: 26 })}</span>
@@ -31,7 +40,7 @@ export function renderMuhadatsahList() {
 }
 
 export function renderMuhadatsahDetail(topikId) {
-  const topik = getTopikMuhadatsah().find(t => t.id === topikId);
+  const topik = myTopikList().find(t => t.id === topikId);
   if (!topik) return `<div class="card">Topik tidak ditemukan. <a href="/muhadatsah">Kembali</a></div>`;
 
   const rows = topik.dialog.map(line => `

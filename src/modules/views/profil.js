@@ -2,7 +2,7 @@ import { hijaiyah } from '../../data/hijaiyah.js';
 import { getKosakata } from '../content.js';
 import { badges } from '../../data/achievements.js';
 import { getSummary, resetProgress } from '../progress.js';
-import { getMyKelasInfo, joinKelas, getKelasByGuru, getCachedKelasList, getMuridByKelas } from '../kelas.js';
+import { getMyKelasInfo, joinKelas, leaveKelas, getKelasByGuru, getCachedKelasList, getMuridByKelas } from '../kelas.js';
 import { getCurrentRole, getCurrentUser, getCurrentNama } from '../auth.js';
 import { speakArabic, getAvailableArabicVoices, getSelectedVoiceURI, setSelectedVoiceURI } from '../speech.js';
 import { icon } from '../icons.js';
@@ -67,7 +67,7 @@ function renderGuruStatsSection() {
   const kelasRowsHtml = guruStats.kelasList.map(k => `
     <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--color-ink-100);">
       <div>
-        <div style="font-size:var(--fs-sm); font-weight:var(--fw-semibold);">${k.nama}</div>
+        <div style="font-size:var(--fs-sm); font-weight:var(--fw-semibold);">${k.nama}${k.tingkat ? ` <span style="font-weight:var(--fw-regular); color:var(--color-ink-400);">(${k.tingkat})</span>` : ''}</div>
         <div style="font-size:var(--fs-2xs); color:var(--color-ink-400);">Kode kelas: ${k.id}</div>
       </div>
       <span style="font-size:var(--fs-xs); color:var(--color-ink-500);">${k.jumlahMurid} murid</span>
@@ -272,24 +272,41 @@ function renderSoundSettingsCard(showReset) {
   `;
 }
 
+let showChangeKelasForm = false;
+
 function renderKelasWidget() {
-  const { kelasId, kelasNama } = getMyKelasInfo();
+  const { kelasId, kelasNama, tingkat } = getMyKelasInfo();
+
+  if (kelasId && !showChangeKelasForm) {
+    return `
+      <div class="card" style="display:flex; flex-direction:column; gap:var(--space-3);">
+        <div style="font-size:var(--fs-sm); font-weight:var(--fw-bold); color:var(--color-ink-900); display:flex; align-items:center; gap:8px;">
+          ${icon('users', { size: 16 })} Kelas
+        </div>
+        <div style="font-size:var(--fs-sm); color:var(--color-ink-700);">
+          Kamu tergabung di kelas <strong>${kelasNama}</strong>${tingkat ? ` <span style="color:var(--color-ink-400); font-weight:var(--fw-regular);">(Kelas ${tingkat})</span>` : ''}.
+        </div>
+        ${!tingkat ? `<div style="font-size:var(--fs-2xs); color:var(--color-error);">Kelas ini belum ditandai tingkatnya oleh guru, jadi materi/kuis belum bisa tampil. Minta guru mengisi tingkat kelas ini.</div>` : ''}
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn btn--outline" id="change-kelas-btn" style="flex:1;">Ganti Kelas</button>
+          <button type="button" class="btn btn--outline" id="leave-kelas-btn" style="flex:1; color:var(--color-error); border-color:var(--color-error);">Keluar Kelas</button>
+        </div>
+      </div>
+    `;
+  }
 
   return `
     <div class="card" style="display:flex; flex-direction:column; gap:var(--space-3);">
       <div style="font-size:var(--fs-sm); font-weight:var(--fw-bold); color:var(--color-ink-900); display:flex; align-items:center; gap:8px;">
         ${icon('users', { size: 16 })} Kelas
       </div>
-      ${kelasId ? `
-        <div style="font-size:var(--fs-sm); color:var(--color-ink-700);">Kamu tergabung di kelas <strong>${kelasNama}</strong>.</div>
-      ` : `
-        <div style="font-size:var(--fs-xs); color:var(--color-ink-500);">Belum gabung kelas. Minta kode kelas dari gurumu, lalu masukkan di sini supaya progresmu bisa dipantau.</div>
-        <form id="join-kelas-form" style="display:flex; gap:8px;">
-          <input type="text" name="kodeKelas" placeholder="Kode kelas" required style="flex:1; padding:8px 10px; border-radius:var(--radius-md); border:1px solid var(--color-ink-200);">
-          <button type="submit" class="btn btn--secondary" style="width:auto; padding:0 16px;">Gabung</button>
-        </form>
-        <div id="join-kelas-error" style="font-size:var(--fs-2xs); color:var(--color-error);"></div>
-      `}
+      <div style="font-size:var(--fs-xs); color:var(--color-ink-500);">Minta kode kelas dari gurumu, lalu masukkan di sini supaya progresmu bisa dipantau.</div>
+      <form id="join-kelas-form" style="display:flex; gap:8px;">
+        <input type="text" name="kodeKelas" placeholder="Kode kelas" required style="flex:1; padding:8px 10px; border-radius:var(--radius-md); border:1px solid var(--color-ink-200);">
+        <button type="submit" class="btn btn--secondary" style="width:auto; padding:0 16px;">Gabung</button>
+      </form>
+      <div id="join-kelas-error" style="font-size:var(--fs-2xs); color:var(--color-error);"></div>
+      ${kelasId ? `<button type="button" class="btn btn--outline" id="cancel-change-kelas-btn">Batal</button>` : ''}
     </div>
   `;
 }
@@ -346,7 +363,7 @@ export function bindProfilEvents(root, rerender) {
     }
   });
 
-  // Gabung kelas
+  // Gabung/ganti kelas
   root.querySelector('#join-kelas-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const kode = new FormData(e.target).get('kodeKelas').trim();
@@ -355,10 +372,33 @@ export function bindProfilEvents(root, rerender) {
     if (submitBtn) submitBtn.disabled = true;
     try {
       await joinKelas(getCurrentUser().uid, kode);
+      showChangeKelasForm = false;
       rerender();
     } catch (err) {
       if (errorEl) errorEl.textContent = err.message || 'Gagal gabung kelas.';
       if (submitBtn) submitBtn.disabled = false;
     }
+  });
+
+  root.querySelector('#change-kelas-btn')?.addEventListener('click', () => {
+    showChangeKelasForm = true;
+    rerender();
+  });
+
+  root.querySelector('#cancel-change-kelas-btn')?.addEventListener('click', () => {
+    showChangeKelasForm = false;
+    rerender();
+  });
+
+  root.querySelector('#leave-kelas-btn')?.addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'Keluar dari Kelas',
+      message: 'Yakin mau keluar dari kelas ini? Progres belajarmu tetap aman, kamu bisa gabung lagi kapan saja pakai kode kelas.',
+      confirmLabel: 'Ya, Keluar',
+      danger: true
+    });
+    if (!ok) return;
+    await leaveKelas(getCurrentUser().uid);
+    rerender();
   });
 }

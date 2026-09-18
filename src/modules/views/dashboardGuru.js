@@ -2,7 +2,7 @@ import {
   createKelas, getKelasByGuru, getCachedKelasList,
   getMuridByKelas, getProgresForMuridBatch, getProgresForMurid, renameKelas, deleteKelas
 } from '../kelas.js';
-import { getUserLevel } from '../progress.js';
+import { getUserLevel, formatDuration } from '../progress.js';
 import { promptDialog, confirmDialog, showToast } from '../ui.js';
 import { icon } from '../icons.js';
 import {
@@ -10,6 +10,55 @@ import {
   getCatatanMurid, saveCatatanMurid, updateCatatanMurid, deleteCatatanMurid,
   getCatatanPengerjaan, saveCatatanPengerjaan, deleteCatatanPengerjaan
 } from '../catatan.js';
+
+const TINGKAT_LIST = ['X', 'XI', 'XII'];
+
+// promptDialog() dari ui.js cuma dukung 1 input teks — kelas butuh nama + pilihan tingkat sekaligus,
+// jadi pakai modal kustom di sini (bukan menambah kompleksitas ke promptDialog yang dipakai banyak alur lain).
+function promptKelasDialog({ title, defaultNama = '', defaultTingkat = 'X', confirmLabel = 'Simpan' }) {
+  return new Promise((resolve) => {
+    const container = document.getElementById('modal-container');
+    if (!container) { resolve(null); return; }
+
+    const tingkatOptionsHtml = TINGKAT_LIST.map(t => `<option value="${t}" ${t === defaultTingkat ? 'selected' : ''}>Kelas ${t}</option>`).join('');
+
+    container.innerHTML = `
+      <div class="modal-overlay" id="kelas-prompt-overlay">
+        <div class="modal-content">
+          <div class="modal-handle"></div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="font-size:var(--fs-lg); font-weight:var(--fw-bold); color:var(--color-primary-700);">${title}</h3>
+            <button id="kelas-prompt-close">${icon('x', { size: 18 })}</button>
+          </div>
+          <form id="kelas-prompt-form" style="display:flex; flex-direction:column; gap:var(--space-3);">
+            <label style="display:flex; flex-direction:column; gap:4px; font-size:var(--fs-sm); color:var(--color-ink-700);">
+              Nama Kelas
+              <input type="text" name="nama" value="${defaultNama.replace(/"/g, '&quot;')}" placeholder="contoh: Kelas 7A" required autofocus style="padding:10px 12px; border-radius:var(--radius-md); border:1px solid var(--color-ink-200);">
+            </label>
+            <label style="display:flex; flex-direction:column; gap:4px; font-size:var(--fs-sm); color:var(--color-ink-700);">
+              Tingkat
+              <select name="tingkat" style="padding:10px 12px; border-radius:var(--radius-md); border:1px solid var(--color-ink-200);">${tingkatOptionsHtml}</select>
+            </label>
+            <button type="submit" class="btn btn--primary">${confirmLabel}</button>
+          </form>
+        </div>
+      </div>
+    `;
+
+    const close = (result) => { container.innerHTML = ''; resolve(result); };
+    document.getElementById('kelas-prompt-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'kelas-prompt-overlay') close(null);
+    });
+    document.getElementById('kelas-prompt-close').addEventListener('click', () => close(null));
+    document.getElementById('kelas-prompt-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      const nama = data.get('nama')?.trim();
+      const tingkat = data.get('tingkat');
+      close(nama ? { nama, tingkat } : null);
+    });
+  });
+}
 
 let kelasList = [];
 let selectedKelasId = null;
@@ -26,7 +75,7 @@ let catatanKelasList = []; // catatan broadcast untuk kelas yang lagi dipilih (f
 
 export function renderDashboardGuru() {
   const kelasOptionsHtml = kelasList.map(k => `
-    <option value="${k.id}" ${k.id === selectedKelasId ? 'selected' : ''}>${k.nama}</option>
+    <option value="${k.id}" ${k.id === selectedKelasId ? 'selected' : ''}>${k.nama}${k.tingkat ? ` (${k.tingkat})` : ''}</option>
   `).join('');
 
   const q = searchMurid.trim().toLowerCase();
@@ -306,22 +355,22 @@ export function bindDashboardGuruEvents(root, rerender, guruUid) {
 
   root.querySelector('#rename-kelas-btn')?.addEventListener('click', async () => {
     if (!selectedKelasId) return;
-    const currentNama = kelasList.find(k => k.id === selectedKelasId)?.nama || '';
-    const nama = await promptDialog({
-      title: 'Ubah Nama Kelas',
-      label: 'Nama Kelas',
-      defaultValue: currentNama,
+    const current = kelasList.find(k => k.id === selectedKelasId);
+    const result = await promptKelasDialog({
+      title: 'Ubah Kelas',
+      defaultNama: current?.nama || '',
+      defaultTingkat: current?.tingkat || 'X',
       confirmLabel: 'Simpan'
     });
-    if (!nama) return;
+    if (!result) return;
 
     try {
-      await renameKelas(selectedKelasId, nama);
+      await renameKelas(selectedKelasId, result.nama, result.tingkat);
       kelasList = await getKelasByGuru(guruUid, { forceRefresh: true });
       rerender();
     } catch (err) {
       console.error('renameKelas failed:', err);
-      showToast('Gagal mengubah nama kelas. Coba lagi.');
+      showToast('Gagal mengubah kelas. Coba lagi.');
     }
   });
 
@@ -354,18 +403,13 @@ export function bindDashboardGuruEvents(root, rerender, guruUid) {
   });
 
   root.querySelector('#new-kelas-btn')?.addEventListener('click', async () => {
-    const nama = await promptDialog({
-      title: 'Buat Kelas Baru',
-      label: 'Nama Kelas',
-      placeholder: 'contoh: Kelas 7A',
-      confirmLabel: 'Buat Kelas'
-    });
-    if (!nama) return;
+    const result = await promptKelasDialog({ title: 'Buat Kelas Baru', confirmLabel: 'Buat Kelas' });
+    if (!result) return;
 
     loadingKelas = true;
     rerender();
     try {
-      const id = await createKelas(nama, guruUid);
+      const id = await createKelas(result.nama, result.tingkat, guruUid);
       kelasList = await getKelasByGuru(guruUid, { forceRefresh: true });
       selectedKelasId = id;
     } catch (err) {
@@ -543,6 +587,7 @@ function renderMuridDetailContent(container, state) {
           <div>
             <div class="rapor-attempt__type">${s.type || 'Kuis'}</div>
             <div class="rapor-attempt__date">${formatDate(s.date)}</div>
+            <div class="rapor-attempt__date">Waktu pengerjaan = ${formatDuration(s.durationSec) || '----'}</div>
           </div>
           <div class="rapor-attempt__score ${pct >= 60 ? 'is-good' : 'is-bad'}">${s.score}/${s.total} <span>(${pct}%)</span></div>
         </div>
